@@ -1,0 +1,110 @@
+import { useRef, useState } from 'react'
+import { Segmented, TextField } from '../components/bits'
+import { useLang } from '../i18n'
+import { parseImport, toCSV, toExport } from '../logic/items'
+import { useStore } from '../store'
+import type { Lang } from '../types'
+
+const MODELS: [string, string][] = [
+  ['claude-opus-5-5', 'Claude Opus 5.5'],
+  ['claude-sonnet-5-5', 'Claude Sonnet 5.5'],
+]
+
+function download(name: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
+export function SettingsView() {
+  const { t, lang, setLang } = useLang()
+  const { items, settings, updateSettings, importItems, replaceAll } = useStore()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [showKey, setShowKey] = useState(false)
+  const stamp = new Date().toISOString().slice(0, 10)
+
+  const onImport = async (f?: File) => {
+    if (!f) return
+    try {
+      alert(t('data.imported', await importItems(parseImport(await f.text()))))
+    } catch (e) {
+      alert(t('data.importError', { e: String((e as Error).message ?? e) }))
+    }
+  }
+
+  const wipe = async () => {
+    if (!confirm(t('data.wipeConfirm', { n: items.length }))) return
+    if (prompt(t('data.wipeType')) !== 'OK') return
+    await replaceAll([])
+  }
+
+  return (
+    <div className="page">
+      <h1>{t('nav.settings')}</h1>
+
+      <h2>{t('settings.lang')}</h2>
+      <Segmented<Lang>
+        value={lang}
+        label={t('settings.lang')}
+        onChange={setLang}
+        options={[
+          { value: 'de', label: 'Deutsch' },
+          { value: 'en', label: 'English' },
+        ]}
+      />
+
+      <h2>{t('settings.ai')}</h2>
+      <p className="muted small">{t('settings.aiText')}</p>
+      <label>
+        {t('settings.claudeKey')}
+        <div className="row gap">
+          <TextField type={showKey ? 'text' : 'password'} value={settings.claudeKey} placeholder="sk-ant-…" autoComplete="off" onCommit={(claudeKey) => updateSettings({ claudeKey: claudeKey.trim() })} />
+          <button className="btn small" onClick={() => setShowKey(!showKey)}>
+            {showKey ? '🙈' : '👁'}
+          </button>
+        </div>
+      </label>
+      <label>
+        {t('settings.model')}
+        <select value={settings.claudeModel} onChange={(e) => updateSettings({ claudeModel: e.target.value })}>
+          {MODELS.map(([id, name]) => (
+            <option key={id} value={id}>
+              {name} – {t(`settings.model.${id}`)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="muted small">{t('settings.aiPrivacy')}</p>
+
+      <h2>{t('settings.lookup')}</h2>
+      <p className="muted small">{t('settings.lookupText')}</p>
+      <label>
+        {t('settings.googleKey')}
+        <TextField value={settings.googleBooksKey} placeholder={t('optional')} autoComplete="off" onCommit={(googleBooksKey) => updateSettings({ googleBooksKey: googleBooksKey.trim() })} />
+      </label>
+
+      <h2>{t('settings.data')}</h2>
+      <p className="muted small">{t('settings.dataText', { n: items.length })}</p>
+      <div className="col gap">
+        <button className="btn" onClick={() => download(`mybib-${stamp}.json`, JSON.stringify(toExport(items)), 'application/json')}>
+          💾 {t('data.exportJson')}
+        </button>
+        <button className="btn" onClick={() => download(`mybib-${stamp}.csv`, toCSV(items), 'text/csv;charset=utf-8')}>
+          📊 {t('data.exportCsv')}
+        </button>
+        <button className="btn" onClick={() => fileRef.current?.click()}>
+          📥 {t('data.import')}
+        </button>
+        <button className="btn danger ghost" onClick={wipe} disabled={!items.length}>
+          🗑 {t('data.wipe')}
+        </button>
+      </div>
+      <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => (onImport(e.target.files?.[0]), (e.target.value = ''))} />
+
+      <p className="muted small about">mybib · {t('settings.about')}</p>
+    </div>
+  )
+}
