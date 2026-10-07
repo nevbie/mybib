@@ -58,7 +58,6 @@ export interface Item {
   notes?: string
 
   room?: string
-  shelf?: string
 
   /** board games */
   playersMin?: number
@@ -85,9 +84,8 @@ export interface Settings {
   claudeKey: string
   claudeModel: string
   googleBooksKey: string
-  /** last room/shelf used when adding, so batch entry stays quick */
+  /** last room used when adding, so batch entry stays quick */
   lastRoom: string
-  lastShelf: string
   /** rooms shown even when empty; [] = use the default rooms */
   rooms: string[]
 }
@@ -97,7 +95,6 @@ export const DEFAULT_SETTINGS: Settings = {
   claudeModel: 'claude-opus-5-5',
   googleBooksKey: '',
   lastRoom: '',
-  lastShelf: '',
   rooms: [],
 }
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Cover, KIND_ICON, Segmented, Stars, Suggest, TextField } from '../components/bits'
 import { Sheet } from '../components/Sheet'
-import { useRooms, useShelves } from '../components/usePlaces'
+import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { knownPeople, openLoan, today } from '../logic/items'
 import { enrichPatch } from '../logic/lookup'
@@ -30,7 +30,6 @@ export function ItemDetail({ id }: { id: string }) {
   const { byId, items, updateItem, removeItems } = useStore()
   const item = byId.get(id)
   const rooms = useRooms()
-  const shelves = useShelves(item?.room)
   const [lendTo, setLendTo] = useState('')
   const [lending, setLending] = useState(false)
   const [moreInfo, setMoreInfo] = useState(false)
@@ -162,7 +161,6 @@ export function ItemDetail({ id }: { id: string }) {
           <h3>{t('detail.place')}</h3>
           <div className="row gap">
             <Suggest id="d-rooms" value={item.room ?? ''} options={rooms} placeholder={t('field.room')} label={t('field.room')} onChange={(room) => up({ room })} />
-            <Suggest id="d-shelves" value={item.shelf ?? ''} options={shelves} placeholder={t('field.shelf')} label={t('field.shelf')} onChange={(shelf) => up({ shelf })} />
           </div>
 
           <h3>{t('detail.loan')}</h3>

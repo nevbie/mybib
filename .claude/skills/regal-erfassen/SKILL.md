@@ -18,8 +18,9 @@ Das ist die kostenlose Alternative zur Regalfoto-Erkennung in der App (die einen
    Reihe und Band getrennt (`Asterix` / `36`, `bpb Schriftenreihe` / `11128`, mehrbändige chinesische Ausgaben je Band ein Eintrag).
 4. Unsicheres mit `"needsCheck": true` markieren statt es wegzulassen – in der App erscheint es unter „Zu prüfen“.
    Nichts erfinden, was nicht zu sehen oder allgemein bekannt ist.
-5. Raum und Regal fragen, falls nicht genannt. Unbekannt → `"room": "Foto-Import"`, `"shelf": "Foto N"`;
-   in der App lassen sich Regale unter **Orte → ✎** umbenennen und in den richtigen Raum verschieben.
+5. Nach dem Raum fragen, falls nicht genannt (es gibt nur Räume, keine Regale). Unbekannt → `"room": "Foto N"`;
+   in der App unter **Orte → ✎** umbenennen (gleicher Name wie ein vorhandener Raum = zusammenlegen)
+   oder in der Bibliothek mit **Auswählen → Bearbeiten** verschieben.
 6. Datei unter `imports/` speichern (ist per `.gitignore` vom Repo ausgeschlossen – der Katalog ist privat)
    und der Nutzerin schicken. Nicht committen.
 
@@ -28,7 +29,6 @@ Das ist die kostenlose Alternative zur Regalfoto-Erkennung in der App (die einen
 ```json
 {
   "room": "Wohnzimmer",
-  "shelf": "Regal 2",
   "items": [
     {
       "kind": "book",
@@ -38,14 +38,14 @@ Das ist die kostenlose Alternative zur Regalfoto-Erkennung in der App (die einen
       "language": "de"
     },
     { "kind": "book", "title": "金瓶梅词话", "creators": ["兰陵笑笑生"], "series": "全本金瓶梅词话", "volume": "3", "language": "zh" },
-    { "kind": "game", "title": "Catan", "shelf": "Spieleschrank" },
+    { "kind": "game", "title": "Catan", "room": "Kleines Zimmer" },
     { "kind": "cd", "title": "Murmeln meiner Kindheit", "creators": ["Rafik Schami"], "needsCheck": true }
   ]
 }
 ```
 
 - `kind`: `book` | `game` | `dvd` | `cd` (Hörbuch-CDs = `cd`, Comics/Bilderbücher = `book`)
-- `room` / `shelf` oben gelten für alle Einträge ohne eigene Angabe.
+- `room` oben gilt für alle Einträge ohne eigene Angabe.
 - Weitere erlaubte Felder: `subtitle`, `year`, `isbn`, `pages`, `tags`, `status` (`none|want|active|done`),
   `rating` (0–5), `owned` (false = Wunschliste), `format` (`physical|ebook|audio`), `notes`, `ageFrom`,
   `playersMin`, `playersMax`, `playMinutes`.

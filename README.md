@@ -17,14 +17,16 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
   - **Import file** – backups, or files made by Claude from shelf photos
     (skill [`regal-erfassen`](.claude/skills/regal-erfassen/SKILL.md)).
 - **Per item**: rating (1–5 ★), status (want to read / reading / read – or play / watch / listen),
-  print / e-book / audiobook, wishlist, 👍 recommendation, notes, tags, room + shelf,
+  print / e-book / audiobook, wishlist, 👍 recommendation, notes, tags, room,
   series & volume, language, age, players & playing time for games.
 - **Lending**: lend to someone, mark as returned, loan history; "Lent out" filter.
 - **Share** an item (title, author, your stars and note, link) via the Android share sheet.
-- **Library**: search (title, author, ISBN, notes, place), filters (kind, wishlist, lent, recommended,
-  to check, status, format, room, shelf, rating), sorting (title ignoring articles, surname, added, rating, year, place).
-- **Places**: rooms (default Küche, Wohnzimmer, Kleines Zimmer) with shelves and counts; rename shelves,
-  move a whole shelf to another room; stats.
+- **Library**: search (title, author, ISBN, notes, room), filters (kind, wishlist, lent, recommended,
+  to check, status, format, room, rating), sorting (title ignoring articles, surname, added, rating, year, room).
+- **Bulk edit**: *Select* in the library (or *All* of the current filter) → set room, status, rating, kind,
+  format, wishlist, recommendation, add/remove a tag, clear "to check", or delete – for many entries at once.
+- **Places**: rooms (default Küche, Wohnzimmer, Kleines Zimmer) with counts; rename a room, or merge it
+  into another by giving it that room's name; stats.
 - **Fill in missing info** for all books at once: cover, publisher, year, ISBN and blurb from Google Books
   (+ Open Library) – by ISBN, otherwise title + author; only clear matches, only empty fields, stops
   cleanly at the Google daily limit and continues with the rest next time.

@@ -85,10 +85,6 @@ describe('search, filter, sort', () => {
       ['Wohnzimmer', 2],
       ['', 1],
     ])
-    expect(s[1].shelves).toEqual([
-      { shelf: 'oben', count: 1 },
-      { shelf: '', count: 1 },
-    ])
   })
 })
 
@@ -108,11 +104,21 @@ describe('duplicates and import', () => {
     const back = parseImport(JSON.stringify(toExport(lib)))
     expect(back).toEqual(lib)
   })
-  it('reads the skill import format with top-level room/shelf', () => {
-    const list = parseImport(JSON.stringify({ room: 'Küche', shelf: 'Foto 1', items: [{ title: 'Käferkolonne', creators: ['Elise Gravel'] }, { title: 'Freddy', shelf: 'unten' }, { nope: 1 }] }))
+  it('reads the skill import format with a top-level room', () => {
+    const list = parseImport(JSON.stringify({ room: 'Küche', items: [{ title: 'Käferkolonne', creators: ['Elise Gravel'] }, { title: 'Freddy', room: 'Wohnzimmer' }, { nope: 1 }] }))
     expect(list.length).toBe(2)
-    expect(list[0]).toMatchObject({ room: 'Küche', shelf: 'Foto 1', source: 'import' })
-    expect(list[1].shelf).toBe('unten')
+    expect(list[0]).toMatchObject({ room: 'Küche', source: 'import' })
+    expect(list[1].room).toBe('Wohnzimmer')
+  })
+  it('turns old shelves into rooms only where the room says nothing', () => {
+    // photo import: room "Foto-Import" + shelf "Foto 4" → room "Foto 4"
+    expect(item({ room: 'Foto-Import', shelf: 'Foto 4' }).room).toBe('Foto 4')
+    expect(item({ shelf: 'Regal 2' }).room).toBe('Regal 2')
+    // a real room wins over a shelf
+    expect(item({ room: 'Wohnzimmer', shelf: 'oben' }).room).toBe('Wohnzimmer')
+    expect('shelf' in item({ room: 'Wohnzimmer', shelf: 'oben' })).toBe(false)
+    const list = parseImport(JSON.stringify({ room: 'Foto-Import', shelf: 'Foto 1', items: [{ title: 'A' }, { title: 'B', shelf: 'Foto 2' }] }))
+    expect(list.map((i) => i.room)).toEqual(['Foto 1', 'Foto 2'])
   })
   it('merges: newer wins, duplicates skipped', () => {
     const incoming = [

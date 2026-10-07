@@ -11,6 +11,7 @@ export type Overlay =
   | { type: 'form'; id?: string; draft?: ItemDraft }
   | { type: 'scan' }
   | { type: 'bulk' }
+  | { type: 'bulkEdit'; ids: string[] }
   | { type: 'photo'; mode: 'shelf' | 'cover' }
   | { type: 'search'; kind: Kind; title: string; creator: string; resolve(c: Candidate | null): void }
 

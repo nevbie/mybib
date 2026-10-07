@@ -857,3 +857,28 @@ summary {
   cursor: pointer;
   color: var(--accent);
 }
+
+/* selection / bulk edit */
+.selbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent-soft);
+  border-radius: 12px;
+  padding: 6px 6px 6px 12px;
+  margin-bottom: 8px;
+}
+.selbar > span {
+  flex: 1;
+  font-weight: 600;
+}
+.item-check {
+  margin-top: 22px;
+  pointer-events: none;
+}
+.item-row.selected {
+  background: var(--surface-2);
+}

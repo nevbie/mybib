@@ -13,8 +13,10 @@ interface StoreValue {
   removeItems(ids: string[]): void
   importItems(items: Item[]): Promise<{ added: number; updated: number; skipped: number }>
   replaceAll(items: Item[]): Promise<void>
-  /** Move everything in room (and optionally shelf) to a new room/shelf – also used to rename. */
-  movePlace(from: { room: string; shelf?: string }, to: { room: string; shelf?: string }): void
+  /** Bulk edit: apply the same change (or a per-item change) to many items. */
+  updateItems(ids: string[], patch: Partial<Item> | ((i: Item) => Partial<Item>)): void
+  /** Move everything in one room to another – also used to rename rooms. */
+  moveRoom(from: string, to: string): void
   updateSettings(patch: Partial<Settings>): void
 }
 
@@ -29,7 +31,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     Promise.all([db.loadItems(), db.getKV<Partial<Settings>>('settings')])
-      .then(([list, s]) => {
+      .then(([stored, s]) => {
+        // bring older data up to date (e.g. shelves → rooms) and save it once
+        const list = stored.map((i) => normalizeItem(i))
+        const changed = list.filter((i, n) => JSON.stringify(i) !== JSON.stringify(stored[n]))
+        if (changed.length) db.putItems(changed).catch(() => {})
         setItems(list)
         setSettings({ ...DEFAULT_SETTINGS, ...s })
       })
@@ -82,14 +88,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setItems(list)
   }, [])
 
-  const movePlace = useCallback(
-    (from: { room: string; shelf?: string }, to: { room: string; shelf?: string }) => {
+  const updateItems = useCallback(
+    (ids: string[], patch: Partial<Item> | ((i: Item) => Partial<Item>)) => {
+      const set = new Set(ids)
       const now = new Date().toISOString()
       const changed: Item[] = []
       const next = itemsRef.current.map((i) => {
-        if ((i.room ?? '') !== from.room) return i
-        if (from.shelf !== undefined && (i.shelf ?? '') !== from.shelf) return i
-        const n = normalizeItem({ ...i, room: to.room || undefined, shelf: to.shelf !== undefined ? to.shelf || undefined : i.shelf, updatedAt: now })
+        if (!set.has(i.id)) return i
+        const n = normalizeItem({ ...i, ...(typeof patch === 'function' ? patch(i) : patch), id: i.id, updatedAt: now })
         changed.push(n)
         return n
       })
@@ -97,6 +103,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       persist(changed)
     },
     [persist],
+  )
+
+  const moveRoom = useCallback(
+    (from: string, to: string) => {
+      const ids = itemsRef.current.filter((i) => (i.room ?? '') === from).map((i) => i.id)
+      updateItems(ids, { room: to || undefined })
+    },
+    [updateItems],
   )
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -109,7 +123,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
 
-  const value: StoreValue = { ready, items, byId, settings, addItems, updateItem, removeItems, importItems, replaceAll, movePlace, updateSettings }
+  const value: StoreValue = { ready, items, byId, settings, addItems, updateItem, removeItems, importItems, replaceAll, updateItems, moveRoom, updateSettings }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

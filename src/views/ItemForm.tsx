@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Cover, Segmented, Suggest } from '../components/bits'
 import { Sheet } from '../components/Sheet'
-import { useRooms, useShelves } from '../components/usePlaces'
+import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { coverFromPhoto } from '../logic/image'
 import { findDuplicate } from '../logic/items'
@@ -26,14 +26,12 @@ export function ItemForm({ id, draft: initial }: { id?: string; draft?: ItemDraf
     owned: true,
     status: 'none',
     room: settings.lastRoom || undefined,
-    shelf: settings.lastShelf || undefined,
     ...(existing ?? initial),
     title: existing?.title ?? initial?.title ?? '',
   }))
   const [creators, setCreators] = useState((d.creators ?? []).join(', '))
   const [tags, setTags] = useState((d.tags ?? []).join(', '))
   const rooms = useRooms()
-  const shelves = useShelves(d.room)
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }))
   const txt = (k: keyof Item) => (d[k] as string | undefined) ?? ''
@@ -73,7 +71,7 @@ export function ItemForm({ id, draft: initial }: { id?: string; draft?: ItemDraf
       updateItem(existing.id, v)
     } else {
       await addItems([v])
-      updateSettings({ lastRoom: v.room ?? '', lastShelf: v.shelf ?? '' })
+      updateSettings({ lastRoom: v.room ?? '' })
     }
     ui.close()
   }
@@ -210,10 +208,6 @@ export function ItemForm({ id, draft: initial }: { id?: string; draft?: ItemDraf
           <label>
             {t('field.room')}
             <Suggest id="f-rooms" value={txt('room')} options={rooms} onChange={(room) => set({ room })} />
-          </label>
-          <label>
-            {t('field.shelf')}
-            <Suggest id="f-shelves" value={txt('shelf')} options={shelves} onChange={(shelf) => set({ shelf })} />
           </label>
         </div>
       )}

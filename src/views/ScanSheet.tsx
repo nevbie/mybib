@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Cover, Segmented, Suggest } from '../components/bits'
 import { Sheet } from '../components/Sheet'
-import { useRooms, useShelves } from '../components/usePlaces'
+import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { findDuplicate } from '../logic/items'
 import { classifyCode } from '../logic/isbn'
@@ -32,9 +32,7 @@ export function ScanSheet() {
   const [camError, setCamError] = useState('')
   const [added, setAdded] = useState<Item[]>([])
   const [room, setRoom] = useState(settings.lastRoom)
-  const [shelf, setShelf] = useState(settings.lastShelf)
   const rooms = useRooms()
-  const shelves = useShelves(room)
   const videoRef = useRef<HTMLVideoElement>(null)
   const phaseRef = useRef(phase)
   phaseRef.current = phase
@@ -103,15 +101,15 @@ export function ScanSheet() {
 
   const add = async (c: Candidate) => {
     const { via: _via, ...draft } = c
-    const [item] = await addItems([{ ...draft, owned: mode !== 'wish', room: mode === 'wish' ? undefined : room || undefined, shelf: mode === 'wish' ? undefined : shelf || undefined, source: 'isbn' }])
-    updateSettings({ lastRoom: room, lastShelf: shelf })
+    const [item] = await addItems([{ ...draft, owned: mode !== 'wish', room: mode === 'wish' ? undefined : room || undefined, source: 'isbn' }])
+    updateSettings({ lastRoom: room })
     setAdded((a) => [item, ...a])
     setPhase({ p: 'scan' })
   }
 
   const editAndAdd = (c: Partial<Candidate> & { title: string }) => {
     const { via: _via, ...draft } = c as Candidate
-    ui.openForm(undefined, { ...draft, owned: mode !== 'wish', room: room || undefined, shelf: shelf || undefined, source: 'isbn' })
+    ui.openForm(undefined, { ...draft, owned: mode !== 'wish', room: room || undefined, source: 'isbn' })
     setPhase({ p: 'scan' })
   }
 
@@ -130,7 +128,6 @@ export function ScanSheet() {
       {mode === 'own' && (
         <div className="row gap">
           <Suggest id="s-rooms" value={room} options={rooms} placeholder={t('field.room')} label={t('field.room')} onChange={setRoom} />
-          <Suggest id="s-shelves" value={shelf} options={shelves} placeholder={t('field.shelf')} label={t('field.shelf')} onChange={setShelf} />
         </div>
       )}
 
@@ -161,7 +158,7 @@ export function ScanSheet() {
         <div className="notice">
           <p>
             <strong>{mode === 'check' ? '✅ ' : '⚠︎ '}</strong>
-            {t('scan.have', { title: phase.dup.title, place: [phase.dup.room, phase.dup.shelf].filter(Boolean).join(' · ') || '–' })}
+            {t('scan.have', { title: phase.dup.title, place: phase.dup.room || '–' })}
           </p>
           <button className="btn small" onClick={() => ui.openItem(phase.dup!.id)}>
             {t('scan.open')}
