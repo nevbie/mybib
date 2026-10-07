@@ -58,7 +58,6 @@ export interface Item {
   notes?: string
 
   room?: string
-  shelf?: string
 
   /** board games */
   playersMin?: number
@@ -72,6 +71,8 @@ export interface Item {
 
   /** set by the photo recognition when it is unsure – shown as "please check" */
   needsCheck?: boolean
+  /** date of the last automatic online lookup (bulk completion), so it isn't retried every time */
+  lookedUp?: string
   source: Source
   addedAt: string
   updatedAt: string
@@ -83,9 +84,8 @@ export interface Settings {
   claudeKey: string
   claudeModel: string
   googleBooksKey: string
-  /** last room/shelf used when adding, so batch entry stays quick */
+  /** last room used when adding, so batch entry stays quick */
   lastRoom: string
-  lastShelf: string
   /** rooms shown even when empty; [] = use the default rooms */
   rooms: string[]
 }
@@ -95,7 +95,6 @@ export const DEFAULT_SETTINGS: Settings = {
   claudeModel: 'claude-opus-5-5',
   googleBooksKey: '',
   lastRoom: '',
-  lastShelf: '',
   rooms: [],
 }
 

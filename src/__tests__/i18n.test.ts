@@ -40,6 +40,7 @@ describe('translations', () => {
       ...FORMATS.map((f) => `format.${f}`),
       ...['all', 'owned', 'wish', 'lent', 'recommend', 'check'].map((s) => `scope.${s}`),
       ...['title', 'creator', 'added', 'rating', 'year', 'place'].map((s) => `sort.${s}`),
+      ...['cover', 'publisher', 'year', 'isbn', 'description'].map((s) => `bulk.field.${s}`),
       ...['auth', 'refusal', 'rate', 'network', 'parse', 'other'].map((s) => `ai.err.${s}`),
       'ai.conf.medium',
       'ai.conf.low',

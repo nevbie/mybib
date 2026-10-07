@@ -1,22 +1,13 @@
 import { useState } from 'react'
 import { Cover, KIND_ICON, Segmented, Stars, Suggest, TextField } from '../components/bits'
 import { Sheet } from '../components/Sheet'
-import { useRooms, useShelves } from '../components/usePlaces'
+import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { knownPeople, openLoan, today } from '../logic/items'
-import type { Candidate } from '../logic/lookup'
+import { enrichPatch } from '../logic/lookup'
 import { useStore } from '../store'
 import { STATUSES, type Item, type Status } from '../types'
 import { useUI } from '../ui'
-
-/** Fill only the fields the item doesn't have yet from an online result. */
-export function enrichPatch(item: Partial<Item>, c: Candidate): Partial<Item> {
-  const patch: Partial<Item> = {}
-  const fields = ['subtitle', 'publisher', 'year', 'isbn', 'pages', 'description', 'coverUrl', 'language'] as const
-  for (const k of fields) if (item[k] === undefined || item[k] === '') (patch as Record<string, unknown>)[k] = c[k]
-  if (!item.creators?.length && c.creators?.length) patch.creators = c.creators
-  return patch
-}
 
 export function shareText(item: Item, t: (k: string, v?: Record<string, string | number>) => string): string {
   const lines = [`${item.title}${item.creators.length ? ' – ' + item.creators.join(', ') : ''}`]
@@ -39,7 +30,6 @@ export function ItemDetail({ id }: { id: string }) {
   const { byId, items, updateItem, removeItems } = useStore()
   const item = byId.get(id)
   const rooms = useRooms()
-  const shelves = useShelves(item?.room)
   const [lendTo, setLendTo] = useState('')
   const [lending, setLending] = useState(false)
   const [moreInfo, setMoreInfo] = useState(false)
@@ -171,7 +161,6 @@ export function ItemDetail({ id }: { id: string }) {
           <h3>{t('detail.place')}</h3>
           <div className="row gap">
             <Suggest id="d-rooms" value={item.room ?? ''} options={rooms} placeholder={t('field.room')} label={t('field.room')} onChange={(room) => up({ room })} />
-            <Suggest id="d-shelves" value={item.shelf ?? ''} options={shelves} placeholder={t('field.shelf')} label={t('field.shelf')} onChange={(shelf) => up({ shelf })} />
           </div>
 
           <h3>{t('detail.loan')}</h3>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ItemRow } from '../components/ItemRow'
-import { useRooms, useShelves } from '../components/usePlaces'
+import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { applyFilters, EMPTY_FILTERS, openLoan, sortItems, type Filters, type SortKey } from '../logic/items'
 import { useStore } from '../store'
@@ -20,8 +20,9 @@ export function LibraryView() {
   const set = (patch: Partial<Filters>) => ui.setFilters({ ...f, ...patch })
   const [more, setMore] = useState(false)
   const [limit, setLimit] = useState(PAGE)
+  /** bulk edit: null = normal mode, otherwise the selected ids */
+  const [sel, setSel] = useState<Set<string> | null>(null)
   const rooms = useRooms()
-  const shelves = useShelves(f.room === 'all' ? undefined : f.room)
 
   const list = useMemo(() => sortItems(applyFilters(items, f), ui.sort, lang), [items, f, ui.sort, lang])
   const counts = useMemo(
@@ -33,7 +34,16 @@ export function LibraryView() {
     }),
     [items],
   )
-  const extraActive = [f.status !== 'all', f.format !== 'all', f.room !== 'all', f.shelf !== 'all', f.minRating > 0].filter(Boolean).length
+  // ids that are selected and still visible with the current filters
+  const selected = useMemo(() => (sel ? list.filter((i) => sel.has(i.id)).map((i) => i.id) : []), [sel, list])
+  const toggle = (id: string) =>
+    setSel((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  const extraActive = [f.status !== 'all', f.format !== 'all', f.room !== 'all', f.minRating > 0].filter(Boolean).length
 
   return (
     <div className="page">
@@ -94,7 +104,7 @@ export function LibraryView() {
           </label>
           <label>
             {t('field.room')}
-            <select value={f.room} onChange={(e) => set({ room: e.target.value, shelf: 'all' })}>
+            <select value={f.room} onChange={(e) => set({ room: e.target.value })}>
               <option value="all">{t('any')}</option>
               {rooms.map((r) => (
                 <option key={r} value={r}>
@@ -102,17 +112,6 @@ export function LibraryView() {
                 </option>
               ))}
               <option value="">{t('places.none')}</option>
-            </select>
-          </label>
-          <label>
-            {t('field.shelf')}
-            <select value={f.shelf} onChange={(e) => set({ shelf: e.target.value })}>
-              <option value="all">{t('any')}</option>
-              {shelves.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
             </select>
           </label>
           <label>
@@ -151,10 +150,32 @@ export function LibraryView() {
         </div>
       ) : (
         <>
-          {list.length !== items.length && <p className="muted small">{t('lib.shown', { n: list.length })}</p>}
+          {sel ? (
+            <div className="selbar">
+              <span>{t('sel.count', { n: selected.length })}</span>
+              <button className="link" onClick={() => setSel(new Set(selected.length === list.length ? [] : list.map((i) => i.id)))}>
+                {selected.length === list.length ? t('ai.none') : t('sel.all', { n: list.length })}
+              </button>
+              <button className="btn small primary" disabled={!selected.length} onClick={() => ui.open({ type: 'bulkEdit', ids: selected })}>
+                ✎ {t('sel.edit')}
+              </button>
+              <button className="icon-btn small" onClick={() => setSel(null)} aria-label={t('close')}>
+                ✕
+              </button>
+            </div>
+          ) : (
+            <div className="row between center">
+              <span className="muted small">{list.length !== items.length ? t('lib.shown', { n: list.length }) : ''}</span>
+              {list.length > 0 && (
+                <button className="link small" onClick={() => setSel(new Set())}>
+                  ☑ {t('sel.start')}
+                </button>
+              )}
+            </div>
+          )}
           <div className="list">
             {list.slice(0, limit).map((i) => (
-              <ItemRow key={i.id} item={i} onClick={() => ui.openItem(i.id)} />
+              <ItemRow key={i.id} item={i} selected={sel ? sel.has(i.id) : undefined} onClick={() => (sel ? toggle(i.id) : ui.openItem(i.id))} />
             ))}
           </div>
           {list.length > limit && (

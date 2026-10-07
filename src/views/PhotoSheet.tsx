@@ -1,16 +1,15 @@
 import { useRef, useState } from 'react'
 import { KIND_ICON, Suggest } from '../components/bits'
 import { Sheet } from '../components/Sheet'
-import { useRooms, useShelves } from '../components/usePlaces'
+import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { RecognizeError, toDraft } from '../logic/recognized'
 import { coverFromPhoto, dataUrlBase64, photoForAI } from '../logic/image'
 import { findDuplicate, newId } from '../logic/items'
-import { matchScore, searchOnline } from '../logic/lookup'
+import { enrichPatch, matchScore, searchOnline } from '../logic/lookup'
 import { useStore } from '../store'
 import { KINDS, type ItemDraft, type Kind } from '../types'
 import { useUI } from '../ui'
-import { enrichPatch } from './ItemDetail'
 
 interface Row {
   key: string
@@ -36,9 +35,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
   const [busy, setBusy] = useState(false)
   const [enrich, setEnrich] = useState(true)
   const [room, setRoom] = useState(settings.lastRoom)
-  const [shelf, setShelf] = useState(settings.lastShelf)
   const rooms = useRooms()
-  const shelves = useShelves(room)
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -91,7 +88,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
     setBusy(true)
     try {
       const coverData = await coverFromPhoto(file)
-      let draft: ItemDraft = { title: '', coverData, room: room || undefined, shelf: shelf || undefined }
+      let draft: ItemDraft = { title: '', coverData, room: room || undefined }
       if (hasKey) {
         setStatus(t('ai.readingCover'))
         abortRef.current = new AbortController()
@@ -124,7 +121,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
     const drafts: ItemDraft[] = []
     try {
       for (let i = 0; i < selected.length; i++) {
-        let d: ItemDraft = { ...selected[i].draft, room: room || undefined, shelf: shelf || undefined }
+        let d: ItemDraft = { ...selected[i].draft, room: room || undefined }
         if (enrich && (d.kind === 'book' || d.kind === 'cd')) {
           setStatus(t('ai.enrichingN', { i: i + 1, n: selected.length }))
           const found = await searchOnline(d.kind!, d.title, d.creators?.[0] ?? '', settings.googleBooksKey).catch(() => [])
@@ -137,7 +134,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
         drafts.push(d)
       }
       await addItems(drafts)
-      updateSettings({ lastRoom: room, lastShelf: shelf })
+      updateSettings({ lastRoom: room })
       alert(t('ai.added', { n: drafts.length }))
       ui.close()
     } finally {
@@ -174,7 +171,6 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
 
       <div className="row gap">
         <Suggest id="p-rooms" value={room} options={rooms} placeholder={t('field.room')} label={t('field.room')} onChange={setRoom} />
-        <Suggest id="p-shelves" value={shelf} options={shelves} placeholder={t('field.shelf')} label={t('field.shelf')} onChange={setShelf} />
       </div>
       {hasKey && <input value={hint} onChange={(e) => setHint(e.target.value)} placeholder={t('ai.hintPh')} aria-label={t('ai.hintPh')} />}
 

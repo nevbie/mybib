@@ -18,6 +18,17 @@ const strList = (v: unknown): string[] =>
 const oneOf = <T extends string>(list: readonly T[], v: unknown, fallback: T): T => (list.includes(v as T) ? (v as T) : fallback)
 
 /**
+ * Only rooms are kept. Older data and imports may still carry a shelf: the photo import put
+ * everything in room "Foto-Import" with shelves "Foto 1" … – those shelves become rooms.
+ */
+function roomOf(r: Record<string, unknown>): string | undefined {
+  const room = str(r.room)
+  const shelf = str(r.shelf)
+  if (shelf && (!room || room === 'Foto-Import')) return shelf
+  return room
+}
+
+/**
  * Turn anything that looks roughly like an item (form draft, AI result, imported JSON)
  * into a complete, valid Item. Unknown fields are dropped.
  */
@@ -52,14 +63,14 @@ export function normalizeItem(d: ItemDraft | Record<string, unknown>, now = new 
     rating,
     recommend: r.recommend === true,
     notes: str(r.notes),
-    room: str(r.room),
-    shelf: str(r.shelf),
+    room: roomOf(r),
     playersMin: num(r.playersMin),
     playersMax: num(r.playersMax),
     playMinutes: num(r.playMinutes),
     ageFrom: num(r.ageFrom),
     loans,
     needsCheck: r.needsCheck === true ? true : undefined,
+    lookedUp: str(r.lookedUp),
     source: oneOf(['manual', 'isbn', 'search', 'ai', 'import'] as const, r.source, 'manual'),
     addedAt: str(r.addedAt) ?? now,
     updatedAt: str(r.updatedAt) ?? now,
@@ -113,16 +124,15 @@ export interface Filters {
   scope: 'all' | 'owned' | 'wish' | 'lent' | 'recommend' | 'check'
   format: Format | 'all'
   room: string | 'all'
-  shelf: string | 'all'
   minRating: number
 }
 
-export const EMPTY_FILTERS: Filters = { q: '', kind: 'all', status: 'all', scope: 'all', format: 'all', room: 'all', shelf: 'all', minRating: 0 }
+export const EMPTY_FILTERS: Filters = { q: '', kind: 'all', status: 'all', scope: 'all', format: 'all', room: 'all', minRating: 0 }
 
 export type SortKey = 'title' | 'creator' | 'added' | 'rating' | 'year' | 'place'
 
 export function searchText(i: Item): string {
-  return fold([i.title, i.subtitle, ...i.creators, i.series, i.publisher, i.isbn, i.notes, ...i.tags, i.room, i.shelf].filter(Boolean).join(' '))
+  return fold([i.title, i.subtitle, ...i.creators, i.series, i.publisher, i.isbn, i.notes, ...i.tags, i.room].filter(Boolean).join(' '))
 }
 
 export function applyFilters(items: Item[], f: Filters): Item[] {
@@ -132,7 +142,6 @@ export function applyFilters(items: Item[], f: Filters): Item[] {
     if (f.status !== 'all' && i.status !== f.status) return false
     if (f.format !== 'all' && i.format !== f.format) return false
     if (f.room !== 'all' && (i.room ?? '') !== f.room) return false
-    if (f.shelf !== 'all' && (i.shelf ?? '') !== f.shelf) return false
     if (f.minRating && i.rating < f.minRating) return false
     switch (f.scope) {
       case 'owned':
@@ -188,35 +197,24 @@ export function sortItems(items: Item[], key: SortKey, lang: string): Item[] {
     case 'year':
       return arr.sort((a, b) => (b.year ?? 0) - (a.year ?? 0))
     case 'place':
-      return arr.sort((a, b) => coll.compare(a.room ?? '￿', b.room ?? '￿') || coll.compare(a.shelf ?? '￿', b.shelf ?? '￿') || coll.compare(titleKey(a.title), titleKey(b.title)))
+      return arr.sort((a, b) => coll.compare(a.room ?? '￿', b.room ?? '￿') || coll.compare(titleKey(a.title), titleKey(b.title)))
   }
 }
 
 export interface PlaceSummary {
   room: string
   count: number
-  shelves: { shelf: string; count: number }[]
 }
 
-/** Rooms with their shelves and item counts ('' = not set). */
+/** Rooms with their item counts ('' = not set); only owned physical items have a place. */
 export function summarizePlaces(items: Item[], lang: string): PlaceSummary[] {
-  const map = new Map<string, Map<string, number>>()
+  const map = new Map<string, number>()
   for (const i of items) {
     if (!i.owned || i.format !== 'physical') continue
-    const r = i.room ?? ''
-    const s = i.shelf ?? ''
-    if (!map.has(r)) map.set(r, new Map())
-    const m = map.get(r)!
-    m.set(s, (m.get(s) ?? 0) + 1)
+    map.set(i.room ?? '', (map.get(i.room ?? '') ?? 0) + 1)
   }
   const coll = new Intl.Collator(lang, { numeric: true })
-  return [...map.entries()]
-    .map(([room, m]) => ({
-      room,
-      count: [...m.values()].reduce((a, b) => a + b, 0),
-      shelves: [...m.entries()].map(([shelf, count]) => ({ shelf, count })).sort((a, b) => (a.shelf ? (b.shelf ? coll.compare(a.shelf, b.shelf) : -1) : 1)),
-    }))
-    .sort((a, b) => (a.room ? (b.room ? coll.compare(a.room, b.room) : -1) : 1))
+  return [...map.entries()].map(([room, count]) => ({ room, count })).sort((a, b) => (a.room ? (b.room ? coll.compare(a.room, b.room) : -1) : 1))
 }
 
 // ---------- import / export ----------
@@ -234,7 +232,7 @@ export function toExport(items: Item[]): ExportFile {
 
 /**
  * Read an import file. Accepts a mybib export, a bare array of items, or `{ items: [...] }`
- * (the format the Claude skill produces). Room/shelf given at the top level apply to all items
+ * (the format the Claude skill produces). A room given at the top level applies to all items
  * that don't have their own.
  */
 export function parseImport(text: string): Item[] {
@@ -249,7 +247,7 @@ export function parseImport(text: string): Item[] {
       normalizeItem({
         ...x,
         room: x.room ?? top.room,
-        shelf: x.shelf ?? top.shelf,
+        shelf: x.shelf ?? (x.room ? undefined : top.shelf),
         source: isExport ? x.source : 'import',
       }),
     )
@@ -288,7 +286,7 @@ export function mergeItems(existing: Item[], incoming: Item[]): { items: Item[];
 
 const CSV_COLUMNS: (keyof Item | 'lentTo')[] = [
   'kind', 'title', 'subtitle', 'creators', 'publisher', 'year', 'isbn', 'language', 'series', 'volume',
-  'format', 'owned', 'status', 'rating', 'recommend', 'room', 'shelf', 'lentTo', 'tags', 'notes', 'addedAt',
+  'format', 'owned', 'status', 'rating', 'recommend', 'room', 'lentTo', 'tags', 'notes', 'addedAt',
 ]
 
 /** Spreadsheet-friendly export (semicolon separated, as Excel in German locale expects). */
@@ -306,12 +304,6 @@ export function allRooms(items: Item[], configured: string[], defaults: string[]
   const set = new Set(configured.length ? configured : defaults)
   for (const i of items) if (i.room) set.add(i.room)
   return [...set]
-}
-
-export function allShelves(items: Item[], room?: string): string[] {
-  const set = new Set<string>()
-  for (const i of items) if (i.shelf && (!room || i.room === room)) set.add(i.shelf)
-  return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
 }
 
 /** Names used in earlier loans, most recent first. */

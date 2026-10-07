@@ -3,12 +3,13 @@ import { openLoan } from '../logic/items'
 import type { Item } from '../types'
 import { Cover, Stars } from './bits'
 
-export function ItemRow({ item, onClick }: { item: Item; onClick(): void }) {
+export function ItemRow({ item, onClick, selected }: { item: Item; onClick(): void; /** set in selection mode */ selected?: boolean }) {
   const { t } = useLang()
   const loan = openLoan(item)
-  const place = [item.room, item.shelf].filter(Boolean).join(' · ')
+  const place = item.room
   return (
-    <button className="item-row" onClick={onClick}>
+    <button className={selected ? 'item-row selected' : 'item-row'} onClick={onClick} aria-pressed={selected}>
+      {selected !== undefined && <input type="checkbox" checked={selected} readOnly tabIndex={-1} aria-hidden className="item-check" />}
       <Cover item={item} />
       <span className="item-row-main">
         <span className="item-row-title">

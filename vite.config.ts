@@ -15,6 +15,8 @@ export default defineConfig({
       manifest: {
         name: 'mybib · Meine Bibliothek',
         short_name: 'mybib',
+        // explicit app identity (also lets phones with a stuck earlier install install it afresh)
+        id: 'mybib-app',
         description: 'Catalogue your books, board games, DVDs and CDs',
         theme_color: '#0f766e',
         background_color: '#f6faf9',

@@ -3,49 +3,44 @@ import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { EMPTY_FILTERS, openLoan, summarizePlaces } from '../logic/items'
 import { useStore } from '../store'
-import { KINDS } from '../types'
+import { DEFAULT_ROOMS, KINDS } from '../types'
 import { useUI } from '../ui'
 
 export function PlacesView() {
-  const { t, lang } = useLang()
+  const { t, lang, pick } = useLang()
   const ui = useUI()
-  const { items, settings, movePlace, updateSettings } = useStore()
+  const { items, settings, moveRoom, updateSettings } = useStore()
   const rooms = useRooms()
   const summary = useMemo(() => summarizePlaces(items, lang), [items, lang])
   const byRoom = new Map(summary.map((s) => [s.room, s]))
   const unplaced = byRoom.get('')
 
-  const show = (room: string, shelf?: string) => {
-    ui.setFilters({ ...EMPTY_FILTERS, room, shelf: shelf ?? 'all', scope: 'owned', format: 'physical' })
+  const show = (room: string) => {
+    ui.setFilters({ ...EMPTY_FILTERS, room, scope: 'owned', format: 'physical' })
     ui.setSort('place')
     ui.go('library')
   }
 
-  const saveRooms = (list: string[]) => updateSettings({ rooms: list })
+  // only rooms set up by hand are stored; rooms that just come from items appear and vanish with them
+  const configured = settings.rooms.length ? settings.rooms : DEFAULT_ROOMS.map(pick)
+  const saveRooms = (list: string[]) => updateSettings({ rooms: list.filter((r, i, a) => r && a.indexOf(r) === i) })
 
   const addRoom = () => {
     const name = prompt(t('places.newRoom'))?.trim()
-    if (name && !rooms.includes(name)) saveRooms([...rooms, name])
+    if (name && !rooms.includes(name)) saveRooms([...configured, name])
   }
   const renameRoom = (room: string) => {
     const name = prompt(t('places.renameRoom', { room }), room)?.trim()
     if (!name || name === room) return
-    movePlace({ room }, { room: name })
-    saveRooms(rooms.map((r) => (r === room ? name : r)).filter((r, i, a) => a.indexOf(r) === i))
+    if (rooms.includes(name) && !confirm(t('places.mergeConfirm', { room, name }))) return
+    moveRoom(room, name)
+    saveRooms(configured.includes(room) ? configured.map((r) => (r === room ? name : r)) : configured)
   }
   const removeRoom = (room: string) => {
     const n = byRoom.get(room)?.count ?? 0
     if (n && !confirm(t('places.removeRoomConfirm', { room, n }))) return
-    if (n) movePlace({ room }, { room: '' })
-    saveRooms(rooms.filter((r) => r !== room))
-  }
-  const editShelf = (room: string, shelf: string) => {
-    const name = prompt(t('places.renameShelf', { shelf: shelf || '–' }), shelf)
-    if (name === null) return
-    const target = prompt(t('places.moveShelf'), room)
-    if (target === null) return
-    movePlace({ room, shelf }, { room: target.trim(), shelf: name.trim() })
-    if (target.trim() && !rooms.includes(target.trim())) saveRooms([...rooms, target.trim()])
+    if (n) moveRoom(room, '')
+    saveRooms(configured.filter((r) => r !== room))
   }
 
   const stats = useMemo(() => {
@@ -115,20 +110,6 @@ export function PlacesView() {
                 </button>
               </span>
             </div>
-            {s && (
-              <ul className="shelves">
-                {s.shelves.map((sh) => (
-                  <li key={sh.shelf}>
-                    <button className="link" onClick={() => show(room, sh.shelf)}>
-                      {sh.shelf || t('places.noShelf')} <span className="muted">({sh.count})</span>
-                    </button>
-                    <button className="icon-btn small" onClick={() => editShelf(room, sh.shelf)} aria-label={t('places.rename')}>
-                      ✎
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
           </section>
         )
       })}
@@ -142,7 +123,7 @@ export function PlacesView() {
       <button className="btn" onClick={addRoom}>
         ＋ {t('places.addRoom')}
       </button>
-      {settings.rooms.length === 0 && <p className="muted small">{t('places.tip')}</p>}
+      <p className="muted small">{t('places.tip')}</p>
     </div>
   )
 }

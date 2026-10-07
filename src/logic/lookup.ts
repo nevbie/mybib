@@ -1,4 +1,4 @@
-import type { ItemDraft, Kind } from '../types'
+import type { Item, ItemDraft, Kind } from '../types'
 import { fold } from './items'
 
 /**
@@ -16,18 +16,30 @@ export interface Candidate extends ItemDraft {
 
 const TIMEOUT = 12000
 
-async function getJson<T>(url: string): Promise<T | null> {
+async function fetchJson<T>(url: string): Promise<{ status: number; data: T | null }> {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), TIMEOUT)
   try {
     const res = await fetch(url, { signal: ctl.signal })
-    if (!res.ok) return null
-    return (await res.json()) as T
+    if (!res.ok) return { status: res.status, data: null }
+    return { status: res.status, data: (await res.json()) as T }
   } catch {
-    return null
+    return { status: 0, data: null }
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function getJson<T>(url: string): Promise<T | null> {
+  return (await fetchJson<T>(url)).data
+}
+
+/** Last problem Google Books reported: '' = fine, 'quota' = daily limit reached, 'key' = API key rejected. */
+let googleProblem: '' | 'quota' | 'key' = ''
+export function takeGoogleProblem(): '' | 'quota' | 'key' {
+  const p = googleProblem
+  googleProblem = ''
+  return p
 }
 
 /** Resolve true when the URL loads as a real image (Open Library returns 1×1 px for "no cover"). */
@@ -92,7 +104,9 @@ function fromGoogle(v: GVolume): Candidate | null {
 
 async function google(q: string, key: string, max = 8): Promise<Candidate[]> {
   const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=${max}&printType=books${key ? `&key=${encodeURIComponent(key)}` : ''}`
-  const data = await getJson<{ items?: GVolume[] }>(url)
+  const { status, data } = await fetchJson<{ items?: GVolume[] }>(url)
+  if (status === 429) googleProblem = 'quota'
+  else if ((status === 400 || status === 403) && key) googleProblem = 'key'
   return (data?.items ?? []).map(fromGoogle).filter((c): c is Candidate => !!c)
 }
 
@@ -258,16 +272,21 @@ export async function searchOnline(kind: Kind, title: string, creator: string, g
   if (!title && !creator) return []
   let list: Candidate[] = []
   if (kind === 'book') {
-    const gq = [title && `intitle:${title}`, creator && `inauthor:${creator}`].filter(Boolean).join(' ')
-    const olq = [title && `title=${encodeURIComponent(title)}`, creator && `author=${encodeURIComponent(creator)}`].filter(Boolean).join('&')
-    const [g, ol] = await Promise.all([google(gq, googleKey), openLibrarySearch(olq)])
-    list = dedupe([...g, ...ol])
+    list = await searchBooks(title, creator, googleKey)
   } else if (kind === 'cd' || kind === 'dvd') {
     const q = [title && `release:"${title.replace(/"/g, '')}"`, creator && `artist:"${creator.replace(/"/g, '')}"`].filter(Boolean).join(' AND ')
     list = await musicbrainz(q)
     if (kind === 'dvd') list = list.filter((c) => c.kind === 'dvd').concat(list.filter((c) => c.kind !== 'dvd'))
   }
   return Promise.all(list.slice(0, 10).map(withWorkingCover))
+}
+
+/** Google Books + Open Library by title / author, merged; covers not checked yet. */
+export async function searchBooks(title: string, creator: string, googleKey = ''): Promise<Candidate[]> {
+  const gq = [title && `intitle:${title}`, creator && `inauthor:${creator}`].filter(Boolean).join(' ')
+  const olq = [title && `title=${encodeURIComponent(title)}`, creator && `author=${encodeURIComponent(creator)}`].filter(Boolean).join('&')
+  const [g, ol] = await Promise.all([google(gq, googleKey), openLibrarySearch(olq)])
+  return dedupe([...g, ...ol])
 }
 
 /** Same title+first author from two services → keep one, merged. */
@@ -280,6 +299,17 @@ function dedupe(list: Candidate[]): Candidate[] {
     else out.push(c)
   }
   return out
+}
+
+/** Share of words the two titles have in common (Jaccard), 0…1. */
+export function titleOverlap(a: string, b: string): number {
+  const words = (s: string) => new Set(fold(s).split(' ').filter(Boolean))
+  const x = words(a)
+  const y = words(b)
+  if (!x.size || !y.size) return 0
+  let common = 0
+  for (const w of x) if (y.has(w)) common++
+  return common / (x.size + y.size - common)
 }
 
 /**
@@ -301,4 +331,34 @@ export function matchScore(known: { title: string; creators?: string[] }, c: Can
     score = score * 0.7 + (has ? 0.3 : 0)
   }
   return score
+}
+
+/** Fill only the fields the item doesn't have yet from an online result. */
+export function enrichPatch(item: Partial<Item>, c: Candidate): Partial<Item> {
+  const patch: Partial<Item> = {}
+  const fields = ['subtitle', 'publisher', 'year', 'isbn', 'pages', 'description', 'coverUrl', 'language'] as const
+  for (const k of fields) if ((item[k] === undefined || item[k] === '') && c[k] !== undefined && c[k] !== '') (patch as Record<string, unknown>)[k] = c[k]
+  if (!item.creators?.length && c.creators?.length) patch.creators = c.creators
+  return patch
+}
+
+/**
+ * Best online match for an item already in the catalogue: by ISBN if it has one, otherwise by
+ * title + author, accepted only when the title (and author, if known) clearly match.
+ */
+export async function findBestMatch(item: Pick<Item, 'title' | 'creators' | 'isbn'>, googleKey = ''): Promise<Candidate | null> {
+  if (item.isbn && /^97[89]\d{10}$/.test(item.isbn)) {
+    const c = await lookupIsbn(item.isbn, googleKey)
+    if (c) return c
+  }
+  const list = await searchBooks(item.title, item.creators[0] ?? '', googleKey)
+  // without a known author only an (almost) identical title counts – in both directions
+  const min = item.creators.length ? 0.75 : 0.95
+  let best: Candidate | null = null
+  let bestScore = 0
+  for (const c of list) {
+    const s = item.creators.length ? matchScore(item, c) : titleOverlap(item.title, c.title)
+    if (s > bestScore) [best, bestScore] = [c, s]
+  }
+  return best && bestScore >= min ? withWorkingCover(best) : null
 }
