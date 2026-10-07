@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { useLang } from '../i18n'
-import { parseImport } from '../logic/items'
+import { parseImportFile } from '../logic/items'
 import { useStore } from '../store'
 import { useUI } from '../ui'
 
@@ -20,8 +20,8 @@ export function AddView() {
   const onImport = async (f?: File) => {
     if (!f) return
     try {
-      const list = parseImport(await f.text())
-      const r = await importItems(list)
+      const { items, updateOnly } = parseImportFile(await f.text())
+      const r = await importItems(items, updateOnly)
       alert(t('data.imported', r))
     } catch (e) {
       alert(t('data.importError', { e: String((e as Error).message ?? e) }))

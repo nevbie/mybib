@@ -1,3 +1,4 @@
+import { toCategory } from './categories'
 import { FORMATS, KINDS, STATUSES, type Format, type Item, type ItemDraft, type Kind, type Status } from '../types'
 
 export function newId(): string {
@@ -57,6 +58,7 @@ export function normalizeItem(d: ItemDraft | Record<string, unknown>, now = new 
     coverUrl: str(r.coverUrl),
     coverData: typeof r.coverData === 'string' && r.coverData.startsWith('data:image/') ? r.coverData : undefined,
     tags: strList(r.tags),
+    category: toCategory(str(r.category)),
     format: oneOf<Format>(FORMATS, r.format, 'physical'),
     owned: r.owned !== false,
     status: oneOf<Status>(STATUSES, r.status, 'none'),
@@ -124,10 +126,12 @@ export interface Filters {
   scope: 'all' | 'owned' | 'wish' | 'lent' | 'recommend' | 'check'
   format: Format | 'all'
   room: string | 'all'
+  /** category id/name, '' = without category */
+  category: string | 'all'
   minRating: number
 }
 
-export const EMPTY_FILTERS: Filters = { q: '', kind: 'all', status: 'all', scope: 'all', format: 'all', room: 'all', minRating: 0 }
+export const EMPTY_FILTERS: Filters = { q: '', kind: 'all', status: 'all', scope: 'all', format: 'all', room: 'all', category: 'all', minRating: 0 }
 
 export type SortKey = 'title' | 'creator' | 'added' | 'rating' | 'year' | 'place'
 
@@ -142,6 +146,7 @@ export function applyFilters(items: Item[], f: Filters): Item[] {
     if (f.status !== 'all' && i.status !== f.status) return false
     if (f.format !== 'all' && i.format !== f.format) return false
     if (f.room !== 'all' && (i.room ?? '') !== f.room) return false
+    if (f.category !== 'all' && (i.category ?? '') !== f.category) return false
     if (f.minRating && i.rating < f.minRating) return false
     switch (f.scope) {
       case 'owned':
@@ -236,12 +241,20 @@ export function toExport(items: Item[]): ExportFile {
  * that don't have their own.
  */
 export function parseImport(text: string): Item[] {
+  return parseImportFile(text).items
+}
+
+/**
+ * Like parseImport, plus the file's mode: `"updateOnly": true` (e.g. a category update made by
+ * Claude) only completes books that are already in the catalogue and never adds new ones.
+ */
+export function parseImportFile(text: string): { items: Item[]; updateOnly: boolean } {
   const data = JSON.parse(text) as unknown
   const list: unknown[] = Array.isArray(data) ? data : Array.isArray((data as { items?: unknown }).items) ? (data as { items: unknown[] }).items : []
   if (!list.length) throw new Error('no items')
   const top = Array.isArray(data) ? {} : (data as Record<string, unknown>)
   const isExport = top.app === 'mybib'
-  return list
+  const items = list
     .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && typeof (x as { title?: unknown }).title === 'string')
     .map((x) =>
       normalizeItem({
@@ -251,13 +264,35 @@ export function parseImport(text: string): Item[] {
         source: isExport ? x.source : 'import',
       }),
     )
+  return { items, updateOnly: top.updateOnly === true }
+}
+
+/** Fields a later import may fill in when the book is already there but they are still empty. */
+const FILLABLE = ['subtitle', 'publisher', 'year', 'isbn', 'language', 'series', 'volume', 'pages', 'description', 'coverUrl', 'category', 'room', 'ageFrom', 'needsCheck'] as const
+
+/** Copy of `old` with its empty fields filled from `inc`, or null when nothing changes. */
+export function fillEmpty(old: Item, inc: Item): Item | null {
+  const next: Item = { ...old }
+  let changed = false
+  for (const k of FILLABLE) {
+    if ((old[k] === undefined || old[k] === '') && inc[k] !== undefined && inc[k] !== '') {
+      ;(next as unknown as Record<string, unknown>)[k] = inc[k]
+      changed = true
+    }
+  }
+  if (!old.tags.length && inc.tags.length) {
+    next.tags = inc.tags
+    changed = true
+  }
+  return changed ? { ...next, updatedAt: new Date().toISOString() } : null
 }
 
 /**
  * Merge imported items: same id → newer `updatedAt` wins; no id match but obvious duplicate
- * (same ISBN or same title/creator/kind/format) → skipped; otherwise added.
+ * (same ISBN or same title/creator/volume/kind/format) → its empty fields are filled in;
+ * otherwise added (unless `updateOnly`).
  */
-export function mergeItems(existing: Item[], incoming: Item[]): { items: Item[]; added: number; updated: number; skipped: number } {
+export function mergeItems(existing: Item[], incoming: Item[], updateOnly = false): { items: Item[]; added: number; updated: number; skipped: number } {
   const byId = new Map(existing.map((i) => [i.id, i]))
   let added = 0
   let updated = 0
@@ -273,7 +308,17 @@ export function mergeItems(existing: Item[], incoming: Item[]): { items: Item[];
       } else skipped++
       continue
     }
-    if (findDuplicate(all, inc)) {
+    const dup = findDuplicate(all, inc)
+    if (dup) {
+      const filled = fillEmpty(dup, inc)
+      if (filled) {
+        all[all.indexOf(dup)] = filled
+        byId.set(filled.id, filled)
+        updated++
+      } else skipped++
+      continue
+    }
+    if (updateOnly) {
       skipped++
       continue
     }
@@ -286,7 +331,7 @@ export function mergeItems(existing: Item[], incoming: Item[]): { items: Item[];
 
 const CSV_COLUMNS: (keyof Item | 'lentTo')[] = [
   'kind', 'title', 'subtitle', 'creators', 'publisher', 'year', 'isbn', 'language', 'series', 'volume',
-  'format', 'owned', 'status', 'rating', 'recommend', 'room', 'lentTo', 'tags', 'notes', 'addedAt',
+  'format', 'owned', 'status', 'rating', 'recommend', 'category', 'room', 'lentTo', 'tags', 'notes', 'addedAt',
 ]
 
 /** Spreadsheet-friendly export (semicolon separated, as Excel in German locale expects). */

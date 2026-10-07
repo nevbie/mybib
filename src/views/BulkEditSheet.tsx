@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CategorySelect } from '../components/CategorySelect'
 import { Sheet } from '../components/Sheet'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
@@ -21,6 +22,7 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
   const [room, setRoom] = useState<Choice>('')
   const [newRoom, setNewRoom] = useState('')
   const [kind, setKind] = useState<Choice>('')
+  const [category, setCategory] = useState<Choice>('')
   const [status, setStatus] = useState<Choice>('')
   const [format, setFormat] = useState<Choice>('')
   const [owned, setOwned] = useState<Choice>('')
@@ -39,12 +41,13 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
   })()
 
   const targetRoom = room === NEW_ROOM ? newRoom.trim() : room === NONE_ROOM ? '' : room
-  const changes = [room && (room !== NEW_ROOM || newRoom.trim()), kind, status, format, owned, recommend, rating, addTag.trim(), removeTag, checked].filter(Boolean).length
+  const changes = [room && (room !== NEW_ROOM || newRoom.trim()), category, kind, status, format, owned, recommend, rating, addTag.trim(), removeTag, checked].filter(Boolean).length
 
   const apply = () => {
     const patch: Partial<Item> = {}
     if (room && (room !== NEW_ROOM || targetRoom)) patch.room = targetRoom || undefined
     if (kind) patch.kind = kind as Item['kind']
+    if (category) patch.category = category === NONE_ROOM ? undefined : category
     if (status) patch.status = status as Item['status']
     if (format) patch.format = format as Item['format']
     if (owned) patch.owned = owned === 'yes'
@@ -104,6 +107,10 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
         </select>
       </label>
       {room === NEW_ROOM && <input value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder={t('places.newRoom')} aria-label={t('places.newRoom')} autoFocus />}
+      <label>
+        {t('field.category')}
+        <CategorySelect value={category} onChange={setCategory} noneValue={NONE_ROOM} head={unchanged} />
+      </label>
       <div className="grid2">
         <label>
           {t('detail.status')}

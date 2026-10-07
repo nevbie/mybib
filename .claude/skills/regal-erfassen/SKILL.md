@@ -46,6 +46,13 @@ Das ist die kostenlose Alternative zur Regalfoto-Erkennung in der App (die einen
 
 - `kind`: `book` | `game` | `dvd` | `cd` (Hörbuch-CDs = `cd`, Comics/Bilderbücher = `book`)
 - `room` oben gilt für alle Einträge ohne eigene Angabe.
+- `category`: eine Hauptkategorie je Eintrag, als ID oder deutscher Name: `picture` Bilderbuch, `children` Kinderbuch,
+  `youth` Jugendbuch, `comic` Comic & Graphic Novel, `novel` Roman & Erzählung, `crime` Krimi & Thriller,
+  `fantasy` Fantasy & Science-Fiction, `classic` Klassiker, Drama & Lyrik, `humor` Humor, `nonfiction` Sachbuch,
+  `guide` Ratgeber, `cooking` Kochen & Trinken, `travel` Reise & Sprachführer, `hobby` Sport, Outdoor & Hobby,
+  `arts` Kunst, Musik & Design, `religion` Religion & Philosophie, `reference` Wörterbuch & Lernen.
+- **Nachträge** (z. B. Kategorien für schon erfasste Bücher): oben `"updateOnly": true` setzen. Dann werden nur
+  vorhandene Bücher (gleicher Titel + Autor:in + Band) ergänzt – und nur leere Felder; nichts Neues wird angelegt.
 - Weitere erlaubte Felder: `subtitle`, `year`, `isbn`, `pages`, `tags`, `status` (`none|want|active|done`),
   `rating` (0–5), `owned` (false = Wunschliste), `format` (`physical|ebook|audio`), `notes`, `ageFrom`,
   `playersMin`, `playersMax`, `playMinutes`.

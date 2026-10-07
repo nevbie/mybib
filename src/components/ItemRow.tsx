@@ -1,10 +1,11 @@
 import { useLang } from '../i18n'
+import { categoryLabel } from '../logic/categories'
 import { openLoan } from '../logic/items'
 import type { Item } from '../types'
 import { Cover, Stars } from './bits'
 
 export function ItemRow({ item, onClick, selected }: { item: Item; onClick(): void; /** set in selection mode */ selected?: boolean }) {
-  const { t } = useLang()
+  const { t, lang } = useLang()
   const loan = openLoan(item)
   const place = item.room
   return (
@@ -22,6 +23,7 @@ export function ItemRow({ item, onClick, selected }: { item: Item; onClick(): vo
           {item.status !== 'none' && <span className={`badge badge-${item.status}`}>{t(`status.${item.kind}.${item.status}`)}</span>}
           {item.format !== 'physical' && <span className="badge">{t(`format.${item.format}`)}</span>}
           {!item.owned && <span className="badge badge-wish">{t('scope.wish')}</span>}
+          {item.category && <span className="badge badge-cat">{categoryLabel(item.category, lang)}</span>}
           {item.recommend && <span className="badge badge-rec">👍</span>}
           {loan && <span className="badge badge-lent">↗ {loan.to}</span>}
           {item.needsCheck && <span className="badge badge-check">?</span>}

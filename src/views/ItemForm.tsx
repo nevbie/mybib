@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { Cover, Segmented, Suggest } from '../components/bits'
+import { CategorySelect } from '../components/CategorySelect'
 import { Sheet } from '../components/Sheet'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
@@ -33,6 +34,7 @@ export function ItemForm({ id, draft: initial }: { id?: string; draft?: ItemDraf
   const [tags, setTags] = useState((d.tags ?? []).join(', '))
   const rooms = useRooms()
   const fileRef = useRef<HTMLInputElement>(null)
+  const galRef = useRef<HTMLInputElement>(null)
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }))
   const txt = (k: keyof Item) => (d[k] as string | undefined) ?? ''
   const num = (k: keyof Item) => (d[k] === undefined ? '' : String(d[k]))
@@ -89,11 +91,19 @@ export function ItemForm({ id, draft: initial }: { id?: string; draft?: ItemDraf
     >
       <Segmented<Kind> value={d.kind} label={t('field.kind')} onChange={(kind) => set({ kind, format: kind === 'book' ? d.format : 'physical' })} options={KINDS.map((k) => ({ value: k, label: t(`kind.${k}`) }))} />
 
+      <label>
+        {t('field.category')}
+        <CategorySelect value={d.category ?? ''} onChange={(category) => set({ category: category || undefined })} />
+      </label>
+
       <div className="form-cover">
         <Cover item={{ ...d, title: d.title || '?' }} size="lg" />
         <div className="col gap">
           <button className="btn small" onClick={() => fileRef.current?.click()}>
-            📷 {t('form.coverPhoto')}
+            📷 {t('cover.camera')}
+          </button>
+          <button className="btn small" onClick={() => galRef.current?.click()}>
+            🖼 {t('cover.gallery')}
           </button>
           {(d.coverData || d.coverUrl) && (
             <button className="btn small ghost" onClick={() => set({ coverData: undefined, coverUrl: undefined })}>
@@ -103,7 +113,8 @@ export function ItemForm({ id, draft: initial }: { id?: string; draft?: ItemDraf
           <button className="btn small" onClick={fillOnline} disabled={d.kind === 'game'}>
             🔎 {t('form.fillOnline')}
           </button>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
+          <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (onPhoto(e.target.files?.[0]), (e.target.value = ''))} />
+          <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => (onPhoto(e.target.files?.[0]), (e.target.value = ''))} />
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { CategorySelect } from '../components/CategorySelect'
 import { ItemRow } from '../components/ItemRow'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
@@ -43,7 +44,7 @@ export function LibraryView() {
       else n.add(id)
       return n
     })
-  const extraActive = [f.status !== 'all', f.format !== 'all', f.room !== 'all', f.minRating > 0].filter(Boolean).length
+  const extraActive = [f.status !== 'all', f.format !== 'all', f.room !== 'all', f.category !== 'all', f.minRating > 0].filter(Boolean).length
 
   return (
     <div className="page">
@@ -101,6 +102,10 @@ export function LibraryView() {
                 </option>
               ))}
             </select>
+          </label>
+          <label>
+            {t('field.category')}
+            <CategorySelect value={f.category} onChange={(category) => set({ category })} head={<option value="all">{t('any')}</option>} />
           </label>
           <label>
             {t('field.room')}

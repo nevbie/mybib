@@ -23,6 +23,11 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
 - **Share** an item (title, author, your stars and note, link) via the Android share sheet.
 - **Library**: search (title, author, ISBN, notes, room), filters (kind, wishlist, lent, recommended,
   to check, status, format, room, rating), sorting (title ignoring articles, surname, added, rating, year, room).
+- **Categories**: one main category per entry from 17 defaults (picture book, children's, young adult, comics,
+  novels, crime, fantasy & SF, classics, humour, non-fiction, advice, food & drink, travel & phrasebooks,
+  sport & hobby, art & music, religion & philosophy, dictionaries) – rename, add or merge them under Options;
+  filter by category, counts under Places.
+- **Own cover photo**: tap the cover on an entry → take a photo or pick one from the gallery.
 - **Bulk edit**: *Select* in the library (or *All* of the current filter) → set room, status, rating, kind,
   format, wishlist, recommendation, add/remove a tag, clear "to check", or delete – for many entries at once.
 - **Places**: rooms (default Küche, Wohnzimmer, Kleines Zimmer) with counts; rename a room, or merge it
