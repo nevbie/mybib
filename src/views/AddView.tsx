@@ -34,6 +34,7 @@ export function AddView() {
     { icon: '🖼', title: t('add.cover'), text: t('add.coverText'), onClick: () => ui.open({ type: 'photo', mode: 'cover' }) },
     { icon: '🔎', title: t('add.search'), text: t('add.searchText'), onClick: pickSearch },
     { icon: '✍️', title: t('add.manual'), text: t('add.manualText'), onClick: () => ui.openForm() },
+    { icon: '✨', title: t('bulk.title'), text: t('bulk.short'), onClick: () => ui.open({ type: 'bulk' }) },
     { icon: '📥', title: t('add.import'), text: t('add.importText'), onClick: () => fileRef.current?.click() },
   ]
 

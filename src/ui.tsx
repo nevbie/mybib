@@ -10,6 +10,7 @@ export type Overlay =
   | { type: 'item'; id: string }
   | { type: 'form'; id?: string; draft?: ItemDraft }
   | { type: 'scan' }
+  | { type: 'bulk' }
   | { type: 'photo'; mode: 'shelf' | 'cover' }
   | { type: 'search'; kind: Kind; title: string; creator: string; resolve(c: Candidate | null): void }
 

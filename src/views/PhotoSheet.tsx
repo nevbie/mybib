@@ -6,11 +6,10 @@ import { useLang } from '../i18n'
 import { RecognizeError, toDraft } from '../logic/recognized'
 import { coverFromPhoto, dataUrlBase64, photoForAI } from '../logic/image'
 import { findDuplicate, newId } from '../logic/items'
-import { matchScore, searchOnline } from '../logic/lookup'
+import { enrichPatch, matchScore, searchOnline } from '../logic/lookup'
 import { useStore } from '../store'
 import { KINDS, type ItemDraft, type Kind } from '../types'
 import { useUI } from '../ui'
-import { enrichPatch } from './ItemDetail'
 
 interface Row {
   key: string

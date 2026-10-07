@@ -6,10 +6,10 @@ import { useLang } from '../i18n'
 import { coverFromPhoto } from '../logic/image'
 import { findDuplicate } from '../logic/items'
 import { classifyCode } from '../logic/isbn'
+import { enrichPatch } from '../logic/lookup'
 import { useStore } from '../store'
 import { FORMATS, KINDS, STATUSES, type Item, type ItemDraft, type Kind } from '../types'
 import { useUI } from '../ui'
-import { enrichPatch } from './ItemDetail'
 
 type Draft = Partial<Item> & { title: string; kind: Kind }
 

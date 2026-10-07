@@ -72,6 +72,8 @@ export interface Item {
 
   /** set by the photo recognition when it is unsure – shown as "please check" */
   needsCheck?: boolean
+  /** date of the last automatic online lookup (bulk completion), so it isn't retried every time */
+  lookedUp?: string
   source: Source
   addedAt: string
   updatedAt: string

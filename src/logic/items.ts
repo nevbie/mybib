@@ -60,6 +60,7 @@ export function normalizeItem(d: ItemDraft | Record<string, unknown>, now = new 
     ageFrom: num(r.ageFrom),
     loans,
     needsCheck: r.needsCheck === true ? true : undefined,
+    lookedUp: str(r.lookedUp),
     source: oneOf(['manual', 'isbn', 'search', 'ai', 'import'] as const, r.source, 'manual'),
     addedAt: str(r.addedAt) ?? now,
     updatedAt: str(r.updatedAt) ?? now,

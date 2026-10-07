@@ -25,6 +25,9 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
   to check, status, format, room, shelf, rating), sorting (title ignoring articles, surname, added, rating, year, place).
 - **Places**: rooms (default Küche, Wohnzimmer, Kleines Zimmer) with shelves and counts; rename shelves,
   move a whole shelf to another room; stats.
+- **Fill in missing info** for all books at once: cover, publisher, year, ISBN and blurb from Google Books
+  (+ Open Library) – by ISBN, otherwise title + author; only clear matches, only empty fields, stops
+  cleanly at the Google daily limit and continues with the rest next time.
 - **Duplicate warnings** when scanning, recognising or typing.
 - **Data stays on the phone** (IndexedDB). Export/import JSON backups, export CSV for spreadsheets.
 

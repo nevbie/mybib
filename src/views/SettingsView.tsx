@@ -3,6 +3,7 @@ import { Segmented, TextField } from '../components/bits'
 import { useLang } from '../i18n'
 import { parseImport, toCSV, toExport } from '../logic/items'
 import { useStore } from '../store'
+import { useUI } from '../ui'
 import type { Lang } from '../types'
 
 const MODELS: [string, string][] = [
@@ -22,6 +23,7 @@ function download(name: string, text: string, type: string) {
 export function SettingsView() {
   const { t, lang, setLang } = useLang()
   const { items, settings, updateSettings, importItems, replaceAll } = useStore()
+  const ui = useUI()
   const fileRef = useRef<HTMLInputElement>(null)
   const [showKey, setShowKey] = useState(false)
   const stamp = new Date().toISOString().slice(0, 10)
@@ -85,6 +87,18 @@ export function SettingsView() {
         {t('settings.googleKey')}
         <TextField value={settings.googleBooksKey} placeholder={t('optional')} autoComplete="off" onCommit={(googleBooksKey) => updateSettings({ googleBooksKey: googleBooksKey.trim() })} />
       </label>
+      <details className="small">
+        <summary>{t('settings.googleHow')}</summary>
+        <ol className="muted">
+          <li>{t('settings.googleHow1')}</li>
+          <li>{t('settings.googleHow2')}</li>
+          <li>{t('settings.googleHow3')}</li>
+          <li>{t('settings.googleHow4')}</li>
+        </ol>
+      </details>
+      <button className="btn" onClick={() => ui.open({ type: 'bulk' })}>
+        ✨ {t('bulk.title')}
+      </button>
 
       <h2>{t('settings.data')}</h2>
       <p className="muted small">{t('settings.dataText', { n: items.length })}</p>

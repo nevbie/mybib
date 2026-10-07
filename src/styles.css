@@ -832,3 +832,28 @@ main {
     animation: none;
   }
 }
+
+/* bulk completion */
+.progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin: 12px 0 4px;
+}
+.progress > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.bulk-list {
+  padding-left: 18px;
+  margin: 4px 0;
+}
+details {
+  margin: 4px 0 12px;
+}
+summary {
+  cursor: pointer;
+  color: var(--accent);
+}

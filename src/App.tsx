@@ -2,6 +2,7 @@ import { useLang } from './i18n'
 import { useStore } from './store'
 import { useUI, type TabId } from './ui'
 import { AddView } from './views/AddView'
+import { BulkSheet } from './views/BulkSheet'
 import { ItemDetail } from './views/ItemDetail'
 import { ItemForm } from './views/ItemForm'
 import { LibraryView } from './views/LibraryView'
@@ -49,6 +50,8 @@ export function App() {
             return <ItemDetail key={i} id={o.id} />
           case 'form':
             return <ItemForm key={i} id={o.id} draft={o.draft} />
+          case 'bulk':
+            return <BulkSheet key={i} />
           case 'scan':
             return <ScanSheet key={i} />
           case 'photo':

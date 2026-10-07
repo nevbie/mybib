@@ -4,19 +4,10 @@ import { Sheet } from '../components/Sheet'
 import { useRooms, useShelves } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { knownPeople, openLoan, today } from '../logic/items'
-import type { Candidate } from '../logic/lookup'
+import { enrichPatch } from '../logic/lookup'
 import { useStore } from '../store'
 import { STATUSES, type Item, type Status } from '../types'
 import { useUI } from '../ui'
-
-/** Fill only the fields the item doesn't have yet from an online result. */
-export function enrichPatch(item: Partial<Item>, c: Candidate): Partial<Item> {
-  const patch: Partial<Item> = {}
-  const fields = ['subtitle', 'publisher', 'year', 'isbn', 'pages', 'description', 'coverUrl', 'language'] as const
-  for (const k of fields) if (item[k] === undefined || item[k] === '') (patch as Record<string, unknown>)[k] = c[k]
-  if (!item.creators?.length && c.creators?.length) patch.creators = c.creators
-  return patch
-}
 
 export function shareText(item: Item, t: (k: string, v?: Record<string, string | number>) => string): string {
   const lines = [`${item.title}${item.creators.length ? ' – ' + item.creators.join(', ') : ''}`]
