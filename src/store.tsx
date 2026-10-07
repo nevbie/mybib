@@ -11,7 +11,9 @@ interface StoreValue {
   addItems(drafts: ItemDraft[]): Promise<Item[]>
   updateItem(id: string, patch: Partial<Item>): void
   removeItems(ids: string[]): void
-  importItems(items: Item[]): Promise<{ added: number; updated: number; skipped: number }>
+  importItems(items: Item[], updateOnly?: boolean): Promise<{ added: number; updated: number; skipped: number }>
+  /** Rename a category on all items ('' removes it). */
+  moveCategory(from: string, to: string): void
   replaceAll(items: Item[]): Promise<void>
   /** Bulk edit: apply the same change (or a per-item change) to many items. */
   updateItems(ids: string[], patch: Partial<Item> | ((i: Item) => Partial<Item>)): void
@@ -75,8 +77,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     db.deleteItems(ids).catch((e) => alert(String(e)))
   }, [])
 
-  const importItems = useCallback(async (incoming: Item[]) => {
-    const r = mergeItems(itemsRef.current, incoming)
+  const importItems = useCallback(async (incoming: Item[], updateOnly = false) => {
+    const r = mergeItems(itemsRef.current, incoming, updateOnly)
     setItems(r.items)
     await db.putItems(r.items)
     return { added: r.added, updated: r.updated, skipped: r.skipped }
@@ -113,6 +115,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [updateItems],
   )
 
+  const moveCategory = useCallback(
+    (from: string, to: string) => {
+      const ids = itemsRef.current.filter((i) => i.category === from).map((i) => i.id)
+      updateItems(ids, { category: to || undefined })
+    },
+    [updateItems],
+  )
+
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((s) => {
       const n = { ...s, ...patch }
@@ -123,7 +133,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
 
-  const value: StoreValue = { ready, items, byId, settings, addItems, updateItem, removeItems, importItems, replaceAll, updateItems, moveRoom, updateSettings }
+  const value: StoreValue = { ready, items, byId, settings, addItems, updateItem, removeItems, importItems, replaceAll, updateItems, moveRoom, moveCategory, updateSettings }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

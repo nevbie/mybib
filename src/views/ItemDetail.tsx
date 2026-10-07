@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Cover, KIND_ICON, Segmented, Stars, Suggest, TextField } from '../components/bits'
 import { Sheet } from '../components/Sheet'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { knownPeople, openLoan, today } from '../logic/items'
+import { coverFromPhoto } from '../logic/image'
 import { enrichPatch } from '../logic/lookup'
+import { CategorySelect } from '../components/CategorySelect'
 import { useStore } from '../store'
 import { STATUSES, type Item, type Status } from '../types'
 import { useUI } from '../ui'
@@ -33,8 +35,16 @@ export function ItemDetail({ id }: { id: string }) {
   const [lendTo, setLendTo] = useState('')
   const [lending, setLending] = useState(false)
   const [moreInfo, setMoreInfo] = useState(false)
+  const [coverMenu, setCoverMenu] = useState(false)
+  const camRef = useRef<HTMLInputElement>(null)
+  const galRef = useRef<HTMLInputElement>(null)
   if (!item) return null
   const loan = openLoan(item)
+  const onCoverPhoto = async (f?: File) => {
+    if (!f) return
+    up({ coverData: await coverFromPhoto(f) })
+    setCoverMenu(false)
+  }
   const up = (patch: Partial<Item>) => updateItem(item.id, patch)
   const fmtDate = (d: string) => new Date(d + 'T12:00').toLocaleDateString(lang)
 
@@ -109,7 +119,12 @@ export function ItemDetail({ id }: { id: string }) {
       }
     >
       <div className="detail-head">
-        <Cover item={item} size="lg" />
+        <button className="cover-btn" onClick={() => setCoverMenu(!coverMenu)} aria-label={t('cover.change')} aria-expanded={coverMenu}>
+          <Cover item={item} size="lg" />
+          <span className="cover-btn-badge" aria-hidden>
+            📷
+          </span>
+        </button>
         <div>
           <h2 className="detail-title">{item.title}</h2>
           {item.subtitle && <p className="muted">{item.subtitle}</p>}
@@ -117,6 +132,24 @@ export function ItemDetail({ id }: { id: string }) {
           <Stars value={item.rating} onChange={(rating) => up({ rating })} />
         </div>
       </div>
+
+      {coverMenu && (
+        <div className="row gap wrap cover-menu">
+          <button className="btn small" onClick={() => camRef.current?.click()}>
+            📷 {t('cover.camera')}
+          </button>
+          <button className="btn small" onClick={() => galRef.current?.click()}>
+            🖼 {t('cover.gallery')}
+          </button>
+          {item.coverData && (
+            <button className="btn small ghost" onClick={() => (up({ coverData: undefined }), setCoverMenu(false))}>
+              {item.coverUrl ? t('cover.useOnline') : t('form.coverRemove')}
+            </button>
+          )}
+          <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (onCoverPhoto(e.target.files?.[0]), (e.target.value = ''))} />
+          <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => (onCoverPhoto(e.target.files?.[0]), (e.target.value = ''))} />
+        </div>
+      )}
 
       {item.needsCheck && (
         <div className="notice">
@@ -134,6 +167,9 @@ export function ItemDetail({ id }: { id: string }) {
 
       <h3>{t('detail.status')}</h3>
       <Segmented<Status> value={item.status} label={t('detail.status')} onChange={(status) => up({ status })} options={STATUSES.map((s) => ({ value: s, label: t(`status.${item.kind}.${s}`) }))} />
+
+      <h3>{t('field.category')}</h3>
+      <CategorySelect value={item.category ?? ''} onChange={(category) => up({ category: category || undefined })} />
 
       <div className="toggles">
         <label className="toggle">

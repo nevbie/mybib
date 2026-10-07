@@ -47,6 +47,8 @@ export interface Item {
   /** own photo, downscaled JPEG data URL – wins over coverUrl */
   coverData?: string
   tags: string[]
+  /** one main category: a default id (see logic/categories) or an own name */
+  category?: string
 
   format: Format
   /** false = wishlist (not owned yet) */
@@ -88,6 +90,8 @@ export interface Settings {
   lastRoom: string
   /** rooms shown even when empty; [] = use the default rooms */
   rooms: string[]
+  /** category list in display order; [] = the default categories */
+  categories: string[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -96,6 +100,7 @@ export const DEFAULT_SETTINGS: Settings = {
   googleBooksKey: '',
   lastRoom: '',
   rooms: [],
+  categories: [],
 }
 
 export const DEFAULT_ROOMS: [string, string][] = [

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { useRooms } from '../components/usePlaces'
+import { useCategories, useRooms } from '../components/usePlaces'
+import { categoryLabel } from '../logic/categories'
 import { useLang } from '../i18n'
 import { EMPTY_FILTERS, openLoan, summarizePlaces } from '../logic/items'
 import { useStore } from '../store'
@@ -41,6 +42,18 @@ export function PlacesView() {
     if (n && !confirm(t('places.removeRoomConfirm', { room, n }))) return
     if (n) moveRoom(room, '')
     saveRooms(configured.filter((r) => r !== room))
+  }
+
+  const categories = useCategories()
+  const catStats = useMemo(() => {
+    const count = new Map<string, number>()
+    for (const i of items) count.set(i.category ?? '', (count.get(i.category ?? '') ?? 0) + 1)
+    if (count.size === 1 && count.has('')) return []
+    return [...categories, ''].filter((c) => count.get(c)).map((c) => [c, count.get(c)!] as const)
+  }, [items, categories])
+  const showCategory = (category: string) => {
+    ui.setFilters({ ...EMPTY_FILTERS, category })
+    ui.go('library')
   }
 
   const stats = useMemo(() => {
@@ -93,6 +106,19 @@ export function PlacesView() {
         )}
       </div>
 
+      {catStats.length > 0 && (
+        <>
+          <h2>{t('field.category')}</h2>
+          <div className="chips wrap">
+            {catStats.map(([c, n]) => (
+              <button key={c} className="chip" onClick={() => showCategory(c)}>
+                {c ? categoryLabel(c, lang) : t('cat.none')} <span className="chip-n">{n}</span>
+              </button>
+            ))}
+          </div>
+          <h2>{t('nav.places')}</h2>
+        </>
+      )}
       {rooms.map((room) => {
         const s = byRoom.get(room)
         return (

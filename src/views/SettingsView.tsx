@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react'
 import { Segmented, TextField } from '../components/bits'
 import { useLang } from '../i18n'
-import { parseImport, toCSV, toExport } from '../logic/items'
+import { parseImportFile, toCSV, toExport } from '../logic/items'
 import { useStore } from '../store'
+import { categoryLabel, toCategory } from '../logic/categories'
+import { useCategories } from '../components/usePlaces'
 import { useUI } from '../ui'
 import type { Lang } from '../types'
 
@@ -22,7 +24,29 @@ function download(name: string, text: string, type: string) {
 
 export function SettingsView() {
   const { t, lang, setLang } = useLang()
-  const { items, settings, updateSettings, importItems, replaceAll } = useStore()
+  const { items, settings, updateSettings, importItems, replaceAll, moveCategory } = useStore()
+  const categories = useCategories()
+  const catCount = new Map<string, number>()
+  for (const i of items) if (i.category) catCount.set(i.category, (catCount.get(i.category) ?? 0) + 1)
+  const saveCats = (list: string[]) => updateSettings({ categories: list.filter((c, i, a) => c && a.indexOf(c) === i) })
+  const addCategory = () => {
+    const name = prompt(t('cat.new'))?.trim()
+    if (name) saveCats([...categories, toCategory(name)!])
+  }
+  const renameCategory = (c: string) => {
+    const name = prompt(t('cat.rename', { name: categoryLabel(c, lang) }), categoryLabel(c, lang))?.trim()
+    if (!name || name === categoryLabel(c, lang)) return
+    const to = toCategory(name)!
+    if (categories.includes(to) && !confirm(t('cat.mergeConfirm', { from: categoryLabel(c, lang), to: categoryLabel(to, lang) }))) return
+    moveCategory(c, to)
+    saveCats(categories.map((x) => (x === c ? to : x)))
+  }
+  const removeCategory = (c: string) => {
+    const n = catCount.get(c) ?? 0
+    if (!confirm(t('cat.removeConfirm', { name: categoryLabel(c, lang), n }))) return
+    if (n) moveCategory(c, '')
+    saveCats(categories.filter((x) => x !== c))
+  }
   const ui = useUI()
   const fileRef = useRef<HTMLInputElement>(null)
   const [showKey, setShowKey] = useState(false)
@@ -31,7 +55,8 @@ export function SettingsView() {
   const onImport = async (f?: File) => {
     if (!f) return
     try {
-      alert(t('data.imported', await importItems(parseImport(await f.text()))))
+      const { items: list, updateOnly } = parseImportFile(await f.text())
+      alert(t('data.imported', await importItems(list, updateOnly)))
     } catch (e) {
       alert(t('data.importError', { e: String((e as Error).message ?? e) }))
     }
@@ -99,6 +124,36 @@ export function SettingsView() {
       <button className="btn" onClick={() => ui.open({ type: 'bulk' })}>
         ✨ {t('bulk.title')}
       </button>
+
+      <h2>{t('settings.categories')}</h2>
+      <p className="muted small">{t('settings.categoriesText')}</p>
+      <ul className="cat-list">
+        {categories.map((c) => (
+          <li key={c}>
+            <span>
+              {categoryLabel(c, lang)} <span className="muted small">({catCount.get(c) ?? 0})</span>
+            </span>
+            <span className="row">
+              <button className="icon-btn small" onClick={() => renameCategory(c)} aria-label={t('places.rename')}>
+                ✎
+              </button>
+              <button className="icon-btn small" onClick={() => removeCategory(c)} aria-label={t('places.remove')}>
+                ✕
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="row gap wrap">
+        <button className="btn small" onClick={addCategory}>
+          ＋ {t('cat.add')}
+        </button>
+        {settings.categories.length > 0 && (
+          <button className="btn small ghost" onClick={() => confirm(t('cat.resetConfirm')) && updateSettings({ categories: [] })}>
+            {t('cat.reset')}
+          </button>
+        )}
+      </div>
 
       <h2>{t('settings.data')}</h2>
       <p className="muted small">{t('settings.dataText', { n: items.length })}</p>
