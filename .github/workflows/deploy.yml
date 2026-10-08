@@ -3,7 +3,13 @@ name: Test & deploy
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'app/**'
+      - '.github/workflows/app-*.yml'
   pull_request:
+    paths-ignore:
+      - 'app/**'
+      - '.github/workflows/app-*.yml'
   workflow_dispatch:
 
 permissions:

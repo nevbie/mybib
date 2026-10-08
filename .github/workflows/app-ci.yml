@@ -1,0 +1,86 @@
+name: App CI
+
+# Checks the Flutter app in app/ on every pull request and every change on main:
+# analysis, tests and a debug APK (no signing key, needs no secrets).
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/app-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/app-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  test:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          # Fest auf die Version aus app/pubspec.yaml (environment.flutter).
+          flutter-version-file: app/pubspec.yaml
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get --enforce-lockfile
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Test
+        run: flutter test
+
+  apk:
+    name: Debug APK
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: app/pubspec.yaml
+          cache: true
+
+      - name: Generate Android project
+        run: bash ci/prepare.sh --debug
+
+      - name: Get packages
+        run: flutter pub get --enforce-lockfile
+
+      - name: Build APK
+        run: flutter build apk --debug --dart-define=APP_VERSION="test-${GITHUB_SHA::7}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mybib-debug-apk-${{ github.sha }}
+          path: app/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14

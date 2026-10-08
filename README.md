@@ -38,6 +38,13 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
 - **Duplicate warnings** when scanning, recognising or typing.
 - **Data stays on the phone** (IndexedDB). Export/import JSON backups, export CSV for spreadsheets.
 
+## Android app (Flutter)
+
+The folder [`app/`](app/README.md) holds the same app as a native Android app (Flutter), with the same data
+format – export a backup here, import it there. GitHub Actions build a test APK for every pull request and a
+signed **APK + AAB** release for every merge to `main` (needs the `KEYSTORE_BASE64` / `KEYSTORE_PASSWORD`
+secrets, see `app/README.md`).
+
 ## Development
 
 ```bash
