@@ -7,3 +7,4 @@ ios/
 .metadata
 *.iml
 test_screens/screens/
+.idea/
