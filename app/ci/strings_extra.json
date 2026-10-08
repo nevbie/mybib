@@ -1,0 +1,24 @@
+{
+  "de": {
+    "scan.unsupported": "Die Kamera ist nicht verfügbar. Gib die Nummer unten ein.",
+    "data.exportJsonShare": "Sicherung teilen (z. B. in Google Drive)",
+    "data.saved": "Gespeichert.",
+    "data.exportCsvShare": "Tabelle teilen (CSV)",
+    "settings.dataText": "{n} Einträge, nur auf diesem Gerät gespeichert. Exportiere regelmäßig eine Sicherung – z. B. in Google Drive. Aus der Web-Version: dort exportieren, hier importieren.",
+    "settings.version": "Version {v}",
+    "lib.reset": "Filter zurücksetzen",
+    "app.loading": "Lädt …",
+    "detail.close": "Schließen"
+  },
+  "en": {
+    "scan.unsupported": "The camera is not available. Type the number below.",
+    "data.exportJsonShare": "Share backup (e.g. to Google Drive)",
+    "data.saved": "Saved.",
+    "data.exportCsvShare": "Share spreadsheet (CSV)",
+    "settings.dataText": "{n} entries, stored only on this device. Export a backup regularly – e.g. to Google Drive. From the web version: export there, import here.",
+    "settings.version": "Version {v}",
+    "lib.reset": "Reset filters",
+    "app.loading": "Loading …",
+    "detail.close": "Close"
+  }
+}

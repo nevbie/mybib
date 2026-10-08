@@ -1,0 +1,10 @@
+.dart_tool/
+build/
+android/
+ios/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+*.iml
+test_screens/screens/
+.idea/
