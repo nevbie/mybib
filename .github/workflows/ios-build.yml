@@ -1,0 +1,151 @@
+name: Release build (iOS)
+
+# Manual only (Actions > "Release build (iOS)" > Run workflow),
+# because macOS minutes count 10x on GitHub.
+# Without the Apple secrets it only makes an unsigned test build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # volle History für die Build-Nummer
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Version and build number
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            echo "::error::Shallow clone – die Build-Nummer braucht die volle History (fetch-depth: 0)."
+            exit 1
+          fi
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          APP_VERSION="$(tr -d '\r\n' < version.txt).$BUILD_NUMBER"
+          echo "Version: $APP_VERSION, Build: $BUILD_NUMBER"
+          echo "APP_NAME=mybib" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Install Apple certificate and profile
+        env:
+          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: |
+          if [ -z "$IOS_CERT_P12_BASE64" ] || [ -z "$IOS_PROFILE_BASE64" ]; then
+            echo "::warning::Apple-Secrets fehlen – es wird nur ein Unsigned test build gemacht."
+            echo "IOS_SIGN=no" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          T="$RUNNER_TEMP"
+          echo "$IOS_CERT_P12_BASE64" | tr -d ' \r\n' | base64 -D > "$T/cert.p12"
+          echo "$IOS_PROFILE_BASE64" | tr -d ' \r\n' | base64 -D > "$T/profile.mobileprovision"
+          KC="$T/build.keychain-db"; KCP=$(uuidgen)
+          security create-keychain -p "$KCP" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCP" "$KC"
+          security import "$T/cert.p12" -P "$IOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KCP" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KC"
+          security cms -D -i "$T/profile.mobileprovision" > "$T/profile.plist"
+          UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$T/profile.plist")
+          NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$T/profile.plist")
+          TEAM=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$T/profile.plist")
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$d"; cp "$T/profile.mobileprovision" "$d/$UUID.mobileprovision"
+          done
+          echo "Profil: $NAME ($UUID), Team: $TEAM"
+          echo "IOS_PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "IOS_TEAM_ID=$TEAM" >> "$GITHUB_ENV"
+          echo "IOS_SIGN=yes" >> "$GITHUB_ENV"
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Unsigned test build
+        if: env.IOS_SIGN != 'yes'
+        run: |
+          xcodebuild build \
+            -project mybib.xcodeproj -scheme mybib -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Archive (signed)
+        if: env.IOS_SIGN == 'yes'
+        # Signing goes through the MYBIB_* variables of the app target (see project.yml),
+        # so the Swift package target is not given a provisioning profile.
+        run: |
+          xcodebuild archive \
+            -project mybib.xcodeproj -scheme mybib -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/mybib.xcarchive" \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            MYBIB_SIGN_STYLE=Manual \
+            MYBIB_SIGN_IDENTITY="Apple Distribution" \
+            MYBIB_TEAM="$IOS_TEAM_ID" \
+            MYBIB_PROFILE="$IOS_PROFILE_NAME"
+
+      - name: Export IPA
+        if: env.IOS_SIGN == 'yes'
+        run: |
+          P="$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :method string app-store-connect" "$P"
+          /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" "$P"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $IOS_TEAM_ID" "$P"
+          /usr/libexec/PlistBuddy -c "Add :destination string export" "$P"
+          /usr/libexec/PlistBuddy -c "Add :uploadSymbols bool true" "$P"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$P"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:app.mybib string $IOS_PROFILE_NAME" "$P"
+          cat "$P"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/mybib.xcarchive" \
+            -exportOptionsPlist "$P" \
+            -exportPath "$RUNNER_TEMP/export"
+          cp "$RUNNER_TEMP"/export/*.ipa "$GITHUB_WORKSPACE/$APP_NAME-$APP_VERSION.ipa"
+
+      - name: Upload IPA artifact
+        if: env.IOS_SIGN == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-iOS
+          path: ${{ env.APP_NAME }}-${{ env.APP_VERSION }}.ipa
+
+      - name: Upload to TestFlight
+        if: env.IOS_SIGN == 'yes'
+        working-directory: .
+        env:
+          ASC_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.APPSTORE_API_KEY_P8 }}
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
+            echo "::warning::App-Store-Connect-Schlüssel fehlt – IPA wurde gebaut, aber nicht hochgeladen."
+            exit 0
+          fi
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s\n' "$ASC_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
+          xcrun altool --upload-app -t ios -f "$APP_NAME-$APP_VERSION.ipa" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Clean up keychain
+        if: always()
+        working-directory: .
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/profile.mobileprovision" ~/.appstoreconnect/private_keys/*.p8

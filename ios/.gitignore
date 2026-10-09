@@ -1,0 +1,8 @@
+*.xcodeproj
+/Info.plist
+.build/
+DerivedData/
+xcuserdata/
+.swiftpm/
+build/
+*.ipa
