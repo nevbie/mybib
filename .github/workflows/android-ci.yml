@@ -1,0 +1,65 @@
+name: Android CI
+
+# Checks the native Android app in android/ on every pull request and every push:
+# core unit tests, lint and a debug APK (no signing key, needs no secrets).
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'shared/**'
+      - '.github/workflows/android-ci.yml'
+  push:
+    paths:
+      - 'android/**'
+      - 'shared/**'
+      - '.github/workflows/android-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: android
+
+jobs:
+  test:
+    name: Android test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Test, lint and build debug APK
+        run: ./gradlew :core:test :app:lintDebug :app:assembleDebug --stacktrace
+
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-reports-${{ github.sha }}
+          path: |
+            android/core/build/reports/tests/
+            android/app/build/reports/lint-results-debug.html
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mybib-android-debug-apk-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

@@ -1,0 +1,95 @@
+name: Android release build
+
+# Builds the signed release APK + AAB of the native app in android/ and publishes a GitHub Release.
+# Runs on every change to android/ (or the shared texts) on main, i.e. after a pull request is merged.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'shared/**'
+      - '.github/workflows/android-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # volle History für die Build-Nummer
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Version and signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          # Build-Nummer (versionCode) = Anzahl der Commits auf dem Branch; steigt mit jedem Merge.
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            echo "::error::Shallow clone – die Build-Nummer braucht die volle History (fetch-depth: 0)."
+            exit 1
+          fi
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          APP_VERSION="$(tr -d '\r\n' < version.txt).$BUILD_NUMBER"
+          echo "Version: $APP_VERSION, Build: $BUILD_NUMBER"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+
+          # Signaturschlüssel aus GitHub-Secrets (nie im Repository!)
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::GitHub-Secrets KEYSTORE_BASE64 und KEYSTORE_PASSWORD fehlen (Settings > Secrets and variables > Actions). Anleitung: android/README.md"
+            exit 1
+          fi
+          KS="$RUNNER_TEMP/mybib.keystore"
+          echo "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$KS"
+          echo "KEYSTORE_FILE=$KS" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: ./gradlew :core:test
+
+      - name: Build APK and app bundle
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+        run: ./gradlew :app:assembleRelease :app:bundleRelease -PversionCode=${{ env.BUILD_NUMBER }} --stacktrace
+
+      - name: Rename outputs
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mybib-${{ env.APP_VERSION }}.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/mybib-${{ env.APP_VERSION }}.aab"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mybib-android-APK
+          path: mybib-${{ env.APP_VERSION }}.apk
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-build-${{ env.BUILD_NUMBER }}
+          name: mybib ${{ env.APP_VERSION }}
+          body: "APK = zum direkten Installieren auf dem Handy. AAB = zum Hochladen in die Google Play Console."
+          files: |
+            mybib-${{ env.APP_VERSION }}.apk
+            mybib-${{ env.APP_VERSION }}.aab
