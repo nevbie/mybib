@@ -38,12 +38,16 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
 - **Duplicate warnings** when scanning, recognising or typing.
 - **Data stays on the phone** (IndexedDB). Export/import JSON backups, export CSV for spreadsheets.
 
-## Android app (Flutter)
+## Native apps (Android + iPhone)
 
-The folder [`app/`](app/README.md) holds the same app as a native Android app (Flutter), with the same data
-format – export a backup here, import it there. GitHub Actions build a test APK for every pull request and a
-signed **APK + AAB** release for every merge to `main` (needs the `KEYSTORE_BASE64` / `KEYSTORE_PASSWORD`
-secrets, see `app/README.md`).
+The same app also exists natively, with the same data format – export a backup in one, import it in another:
+
+| Folder | Platform | Builds |
+| --- | --- | --- |
+| [`android/`](android/README.md) | Android, Kotlin + Jetpack Compose | test APK on every push / pull request; signed **APK + AAB** release on every merge to `main` (needs the `KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` secrets) |
+| [`ios/`](ios/README.md) | iPhone, Swift + SwiftUI | simulator build + tests on every push / pull request; **TestFlight** upload by hand (*Actions → iOS release build*, needs the Apple secrets) |
+
+Both apps read their German and English texts from [`shared/strings.json`](shared/strings.json).
 
 ## Development
 
