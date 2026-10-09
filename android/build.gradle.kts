@@ -2,6 +2,10 @@
 // so `MYBIB_CORE_ONLY=1 ./gradlew :core:test` works without Google's Maven repository.
 buildscript {
     if (System.getenv("MYBIB_CORE_ONLY") != "1") {
+        repositories {
+            google()
+            mavenCentral()
+        }
         dependencies { classpath(libs.android.gradle) }
     }
 }
