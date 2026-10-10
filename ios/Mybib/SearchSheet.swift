@@ -1,7 +1,7 @@
 import SwiftUI
 import MybibCore
 
-private let searchable = ["book", "cd", "dvd"]
+private let searchKinds = ["book", "cd", "dvd"]
 
 /// Search Google Books / Open Library / MusicBrainz and hand back the picked result.
 struct SearchSheet: View {
@@ -23,7 +23,7 @@ struct SearchSheet: View {
             List {
                 Section {
                     Picker(model.t("field.kind"), selection: $k) {
-                        ForEach(searchable, id: \.self) { Text(model.t("kind.\($0)")).tag($0) }
+                        ForEach(searchKinds, id: \.self) { Text(model.t("kind.\($0)")).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     LabeledField(label: model.t("field.title"), text: $t).submitLabel(.search).onSubmit(run)
@@ -60,7 +60,7 @@ struct SearchSheet: View {
         .onAppear {
             guard !started else { return }
             started = true
-            k = searchable.contains(kind) ? kind : "book"
+            k = searchKinds.contains(kind) ? kind : "book"
             t = title
             c = creator
             if !title.trimmed.isEmpty { run() }
