@@ -1,7 +1,7 @@
 # mybib – Android-App (Kotlin + Jetpack Compose)
 
 Die native Android-Version von mybib: Bücher, Spiele, DVDs und CDs katalogisieren – Deutsch & Englisch.
-Löst die Flutter-App in `app/` ab, mit gleichem Funktionsumfang und **gleichem Datenformat** wie die
+Löst die frühere Flutter-App ab, mit gleichem Funktionsumfang und **gleichem Datenformat** wie die
 Web-Version im Hauptordner: dort *Sicherung exportieren*, hier *Datei importieren* – fertig.
 
 - Hinzufügen per Barcode-Scan (ISBN/EAN, CameraX + ML Kit), Regalfoto (Claude, eigener API-Schlüssel),
@@ -38,7 +38,7 @@ Texte: einzige Quelle ist `../shared/strings.json` (de/en mit `{platzhalter}`). 
 ### Signaturschlüssel einrichten (einmalig)
 
 Die Release-Builds brauchen zwei GitHub-Secrets (*Settings → Secrets and variables → Actions*) –
-dieselben wie für die Flutter-App:
+dieselben wie für die frühere Flutter-App:
 
 | Secret | Inhalt |
 | --- | --- |
