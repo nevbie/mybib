@@ -17,7 +17,8 @@ final class AppModel {
     /// shows the file picker for an import (Add tab and Settings)
     var importing = false
 
-    init(store: Store = Store()) {
+    init(store: Store? = nil) {
+        let store = store ?? Store()
         self.store = store
         strings = Strings.load(Bundle.main.url(forResource: "strings", withExtension: "json"))
         store.load()
