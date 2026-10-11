@@ -3,6 +3,8 @@ package app.mybib.core
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
@@ -27,6 +29,8 @@ class Recognized(
     val language: String = "",
     val confidence: String = "high",
     val remark: String = "",
+    /** where the cover/spine is in the photo: x0, y0, x1, y1 in thousandths of width/height – used to cut out covers */
+    val box: List<Double>? = null,
 ) {
     /** Item draft for normalizeItem / the form. */
     fun toDraft(): Draft = linkedMapOf<String, Any?>().apply {
@@ -52,6 +56,8 @@ class Recognized(
             language = o["language"].string ?: "",
             confidence = o["confidence"].string ?: "high",
             remark = o["remark"].string ?: "",
+            box = o["box"].obj?.let { b -> listOf("x0", "y0", "x1", "y1").map { (b[it] as? JsonPrimitive)?.doubleOrNull } }
+                ?.takeIf { l -> l.all { it != null } }?.map { it!! },
         )
     }
 }
@@ -72,7 +78,7 @@ private val schema = buildJsonObject {
             putJsonObject("items") {
                 put("type", "object")
                 put("additionalProperties", false)
-                putJsonArray("required") { listOf("kind", "title", "creators", "series", "volume", "publisher", "language", "confidence", "remark").forEach { add(it) } }
+                putJsonArray("required") { listOf("kind", "title", "creators", "series", "volume", "publisher", "language", "confidence", "remark", "box").forEach { add(it) } }
                 putJsonObject("properties") {
                     putJsonObject("kind") { put("type", "string"); putJsonArray("enum") { kinds.forEach { add(it) } } }
                     putJsonObject("title") { put("type", "string") }
@@ -83,6 +89,12 @@ private val schema = buildJsonObject {
                     putJsonObject("language") { put("type", "string") }
                     putJsonObject("confidence") { put("type", "string"); putJsonArray("enum") { add("high"); add("medium"); add("low") } }
                     putJsonObject("remark") { put("type", "string") }
+                    putJsonObject("box") {
+                        put("type", "object")
+                        put("additionalProperties", false)
+                        putJsonArray("required") { listOf("x0", "y0", "x1", "y1").forEach { add(it) } }
+                        putJsonObject("properties") { listOf("x0", "y0", "x1", "y1").forEach { putJsonObject(it) { put("type", "number") } } }
+                    }
                 }
             }
         }
@@ -100,6 +112,7 @@ List every item whose spine or cover you can see, from left to right and top to 
 - language: ISO 639-1 code of the item's language ("de", "en", "zh", "tr", "la", "fr" …), "" if unclear.
 - confidence: "high" if clearly readable, "medium" if partly guessed, "low" if mostly guessed.
 - remark: short note on what was unclear, else "".
+- box: where the item's front cover (or, for a spine, the spine) is in the photo: left x0, top y0, right x1, bottom y1, in thousandths of the image width and height (0–1000, origin top left).
 
 Skip things that are not catalogue items (folders, loose papers, boxes of toys, stacks of newspapers, notebooks without a title). Do not invent items you cannot see. If a spine is too blurry to read at all, skip it rather than guessing wildly."""
 

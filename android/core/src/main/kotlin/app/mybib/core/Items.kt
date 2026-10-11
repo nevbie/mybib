@@ -380,3 +380,38 @@ fun mergeGroup(group: List<Item>): GroupMerge {
     )
     return GroupMerge(keep, sorted.drop(1).map { it.id })
 }
+
+/**
+ * Existing entry a newly recognised item probably is: same ISBN, or same title and kind where author and
+ * volume match or are missing on one side (looser than [findDuplicate], for adding covers to what is there).
+ */
+fun findMatch(items: List<Item>, title: String, isbn: String? = null, creators: List<String> = emptyList(), volume: String? = null, kind: String? = null): Item? {
+    if (!isbn.isNullOrEmpty()) items.firstOrNull { it.isbn == isbn }?.let { return it }
+    val t = fold(title)
+    if (t.isEmpty()) return null
+    val c = creators.firstOrNull()?.let(::fold) ?: ""
+    val v = volume?.let(::fold) ?: ""
+    fun fits(a: String, b: String) = a == b || a.isEmpty() || b.isEmpty()
+    val hits = items.filter { i ->
+        fold(i.title) == t && (kind == null || i.kind == kind) &&
+            fits(i.creators.firstOrNull()?.let(::fold) ?: "", c) && fits(i.volume?.let(::fold) ?: "", v)
+    }
+    // a printed copy is the one a cover photo belongs to
+    return hits.firstOrNull { it.format == "physical" } ?: hits.firstOrNull()
+}
+
+fun findMatchOf(items: List<Item>, d: Draft) =
+    findMatch(items, d["title"].string ?: "", d["isbn"].string, d["creators"].strings, d["volume"].string, d["kind"].string)
+
+/** What a recognised item adds to an existing entry: its empty fields, the creators if none, own cover photo if none. */
+fun completionPatch(old: Item, d: Draft): Draft {
+    val o = old.toJson()
+    val patch = linkedMapOf<String, JsonElement>()
+    for (k in fillable) {
+        if (k == "needsCheck" || k == "room") continue
+        if (o[k].isBlankValue() && !d[k].isBlankValue()) patch[k] = d[k]!!
+    }
+    if (old.creators.isEmpty() && d["creators"].strings.isNotEmpty()) patch["creators"] = d["creators"]!!
+    if (old.coverData == null && !d["coverData"].isBlankValue()) patch["coverData"] = d["coverData"]!!
+    return patch
+}

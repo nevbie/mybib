@@ -54,6 +54,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.mybib.Screen
 import app.mybib.core.Draft
+import app.mybib.core.findMatchOf
+import app.mybib.core.completionPatch
+import app.mybib.core.Item
 import app.mybib.core.RecognizeError
 import app.mybib.core.Recognized
 import app.mybib.core.draftOf
@@ -71,7 +74,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** One recognised item in the review list. */
-class PhotoRow(val base: Draft, val confidence: String, val remark: String, selected: Boolean, val dupTitle: String?) {
+class PhotoRow(
+    val base: Draft,
+    val confidence: String,
+    val remark: String,
+    selected: Boolean,
+    val dupTitle: String?,
+    /** existing entry this cover probably belongs to (cover mode) */
+    val target: Item? = null,
+) {
+    /** complete [target] instead of adding a new entry */
+    var update by mutableStateOf(target != null)
     var title by mutableStateOf(base["title"].string ?: "")
     var creators by mutableStateOf(base["creators"].strings.joinToString(", "))
     var kind by mutableStateOf(base["kind"].string ?: "book")
@@ -138,24 +151,27 @@ fun PhotoScreen(screen: Screen.Photo) {
         st.status = ""
     }
 
-    /** Each photo becomes one entry with the photo as its cover; with a key Claude reads the title. */
+    /**
+     * Cover photos: with a key Claude reads every cover on a photo (one or several) and each is cut out as its
+     * own cover; without a key one photo = one entry. Recognised items that are already in the catalogue are
+     * offered as "complete the existing entry" (cover photo + empty fields) instead of a new one.
+     */
     suspend fun readCovers(photos: List<Uri>) {
         st.busy = true
         for ((n, uri) in photos.withIndex()) {
             st.status = ui.t("ai.readingCovers", "i" to n + 1, "n" to photos.size)
-            // large enough to read the title, small enough to keep as the cover
-            val jpeg = withContext(Dispatchers.IO) { loadJpeg(ctx, uri, 1000, 80) } ?: continue
-            val coverData = dataUrl(jpeg)
-            var draft: Draft = draftOf("title" to "", "kind" to "book", "coverData" to coverData, "source" to "manual")
-            var confidence = "high"
-            var remark = ""
+            // large enough to read several titles on one photo and to cut covers out of it
+            val jpeg = withContext(Dispatchers.IO) { loadJpeg(ctx, uri, 2000, 85) } ?: continue
+            val whole = withContext(Dispatchers.IO) { coverDataUrl(ctx, uri) } ?: continue
+            val found = mutableListOf<PhotoRow>()
             if (vm.store.settings.value.claudeKey.isNotEmpty()) {
                 try {
-                    val first = recognize(jpeg).firstOrNull()
-                    if (first != null) {
-                        draft = first.toDraft() + draftOf("coverData" to coverData)
-                        confidence = first.confidence
-                        remark = first.remark
+                    val recognized = recognize(jpeg)
+                    for (f in recognized) {
+                        val box = f.box
+                        val cut = if (recognized.size > 1 && box != null) withContext(Dispatchers.Default) { cropCover(jpeg, box) } else null
+                        val draft = f.toDraft() + draftOf("coverData" to (cut ?: whole))
+                        found += PhotoRow(draft, f.confidence, f.remark, true, null, findMatchOf(vm.store.items.value, draft))
                     }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
@@ -163,10 +179,16 @@ fun PhotoScreen(screen: Screen.Photo) {
                     if (e is RecognizeError && e.code == "auth") break
                 }
             }
-            val title = draft["title"].string ?: ""
-            val dup = if (title.isEmpty()) null else findDuplicateOf(vm.store.items.value, normalizeItem(draft))?.title
-                ?: st.rows.firstOrNull { it.title == title && it.base["volume"] == draft["volume"] }?.title
-            st.rows.add(PhotoRow(draft, confidence, remark, dup == null, dup))
+            if (found.isEmpty()) found += PhotoRow(draftOf("title" to "", "kind" to "book", "coverData" to whole, "source" to "manual"), "high", "", true, null)
+            for (row in found) {
+                // the same book twice in this batch (e.g. photographed twice)
+                val twice = if (row.title.isEmpty()) null else st.rows.firstOrNull { it.title == row.title && it.base["volume"] == row.base["volume"] }?.title
+                if (twice != null) {
+                    st.rows.add(PhotoRow(row.base, row.confidence, row.remark, false, twice, row.target))
+                } else {
+                    st.rows.add(row)
+                }
+            }
         }
         st.busy = false
         st.status = ""
@@ -181,6 +203,7 @@ fun PhotoScreen(screen: Screen.Photo) {
         val r0 = room
         st.busy = true
         val drafts = mutableListOf<Draft>()
+        var completed = 0
         for ((n, row) in sel.withIndex()) {
             var d = row.draft() + draftOf("room" to r0.ifEmpty { null })
             val kind = row.kind
@@ -200,13 +223,21 @@ fun PhotoScreen(screen: Screen.Photo) {
                 // MusicBrainz asks for max. 1 request per second
                 if (kind == "cd") delay(1000)
             }
-            drafts += d
+            val old = if (row.update) row.target?.let { t -> vm.store.byId(t.id) } else null
+            if (old != null) {
+                // complete the existing entry; its room and personal data stay as they are
+                val patch = completionPatch(old, d)
+                if (patch.isNotEmpty()) vm.store.updateItem(old.id, patch)
+                completed++
+            } else {
+                drafts += d
+            }
         }
-        vm.store.addItems(drafts)
+        if (drafts.isNotEmpty()) vm.store.addItems(drafts)
         vm.store.updateSettings { it.copy(lastRoom = r0) }
         st.busy = false
         st.status = ""
-        vm.dialogs.info(ui.t("ai.added", "n" to drafts.size))
+        vm.dialogs.info(if (completed > 0) ui.t("ai.addedCompleted", "n" to drafts.size, "m" to completed) else ui.t("ai.added", "n" to drafts.size))
         vm.pop()
     }
 
@@ -218,7 +249,7 @@ fun PhotoScreen(screen: Screen.Photo) {
                     onClick = { addAll() },
                     enabled = !st.busy && selected > 0,
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
-                ) { Text(ui.t("ai.addN", "n" to selected)) }
+                ) { Text(if (st.rows.any { it.selected && it.update && it.target != null }) ui.t("ai.applyN", "n" to selected) else ui.t("ai.addN", "n" to selected)) }
             }
         },
     ) {
@@ -310,6 +341,12 @@ private fun RowCard(r: PhotoRow) {
                     if (sv.isNotEmpty()) Text(sv, Modifier.align(Alignment.CenterVertically))
                     if (r.confidence != "high") Pill(ui.t("ai.conf.${r.confidence}"), Amber200)
                     if (r.dupTitle != null) Pill(ui.t("ai.dup"), Pink100)
+                }
+                r.target?.let { t ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = r.update, onCheckedChange = { r.update = it })
+                        Text(ui.t("ai.completeExisting", "title" to t.title), style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 if (r.remark.isNotEmpty()) Small(r.remark)
             }
