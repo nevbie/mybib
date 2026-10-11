@@ -267,3 +267,26 @@ class CoverMatchTest {
         assertEquals(listOf(10.0, 20.0, 500.0, 600.5), r.box)
     }
 }
+
+class MergeChoicesTest {
+    private val a = item("id" to "a", "title" to "Western Circus", "volume" to "22", "creators" to listOf("Morris", "Goscinny"), "coverData" to "data:image/jpeg;base64,A", "addedAt" to "2026-01-01")
+    private val b = item("id" to "b", "title" to "Western Circus", "volume" to "62", "creators" to listOf("Morris", "René Goscinny"), "room" to "Wohnzimmer",
+        "coverData" to "data:image/jpeg;base64,B", "rating" to 3, "addedAt" to "2026-01-02")
+
+    @Test fun listsDifferingFieldsAndSimilarEntries() {
+        assertEquals(listOf("cover", "creators", "volume", "room", "rating"), differingFields(listOf(a, b)))
+        assertEquals(listOf(listOf("a", "b")), similarGroups(listOf(a, b, item("id" to "c", "title" to "Other"))).map { ids(it) })
+        assertTrue(similarGroups(listOf(a, b), exclude = setOf("a")).isEmpty())
+    }
+
+    @Test fun takesChosenValues() {
+        val m = mergeWithChoices(listOf(a, b), mapOf("cover" to "a", "volume" to "b", "creators" to "a"))
+        assertEquals("b", m.keep.id)
+        assertEquals(listOf("a"), m.remove)
+        assertEquals("data:image/jpeg;base64,A", m.keep.coverData)
+        assertEquals("62", m.keep.volume)
+        assertEquals(listOf("Morris", "Goscinny"), m.keep.creators)
+        assertEquals("Wohnzimmer", m.keep.room)
+        assertEquals(3, m.keep.rating)
+    }
+}

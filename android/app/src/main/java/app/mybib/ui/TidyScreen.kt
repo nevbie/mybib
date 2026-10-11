@@ -37,6 +37,7 @@ import app.mybib.core.duplicateGroups
 import app.mybib.core.groupKey
 import app.mybib.core.kinds
 import app.mybib.core.mergeGroup
+import app.mybib.core.similarGroups
 import app.mybib.core.statuses
 import kotlinx.coroutines.launch
 
@@ -50,6 +51,11 @@ fun TidyScreen(screen: Screen.Tidy) {
     val vm = ui.vm
     val scope = rememberCoroutineScope()
     val groups = remember(ui.items, ui.settings.dupIgnore) { duplicateGroups(ui.items, ui.settings.dupIgnore) }
+    // same title, but author/volume/format differ – maybe the same thing, maybe not: merged only by hand
+    val similar = remember(ui.items, ui.settings.dupIgnore, groups) {
+        similarGroups(ui.items, ui.settings.dupIgnore, groups.flatten().map { it.id }.toSet())
+    }
+    var showSimilar by remember { mutableStateOf(false) }
 
     fun mergeAll() = scope.launch {
         val merges = groups.map(::mergeGroup)
@@ -70,6 +76,17 @@ fun TidyScreen(screen: Screen.Tidy) {
                     }
                 }
                 items(groups, key = { groupKey(it) }) { g -> DupGroup(g) }
+            }
+            if (similar.isNotEmpty()) {
+                item {
+                    TextButton(onClick = { showSimilar = !showSimilar }) {
+                        Text((if (showSimilar) "▾ " else "▸ ") + ui.t("tidy.similar", "n" to similar.size), fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (showSimilar) {
+                    item { Small(ui.t("tidy.similarIntro")) }
+                    items(similar, key = { "s" + groupKey(it) }) { g -> DupGroup(g, quickMerge = false) }
+                }
             }
             if (ui.settings.dupIgnore.isNotEmpty()) {
                 item {
@@ -98,7 +115,7 @@ fun TidyScreen(screen: Screen.Tidy) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DupGroup(group: List<Item>) {
+private fun DupGroup(group: List<Item>, quickMerge: Boolean = true) {
     val ui = LocalUi.current
     val vm = ui.vm
     val scope = rememberCoroutineScope()
@@ -116,13 +133,14 @@ private fun DupGroup(group: List<Item>) {
             for (i in group) {
                 ItemTile(i, onClick = { sel = if (i.id in sel) sel - i.id else sel + i.id }, selected = i.id in sel)
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (i.id == keepId) Pill("✓ ${ui.t("tidy.keep")}")
+                    if (quickMerge && i.id == keepId) Pill("✓ ${ui.t("tidy.keep")}")
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = { vm.push(Screen.Detail(i.id)) }) { Text(ui.t("tidy.open")) }
                 }
             }
             FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { vm.store.applyMerges(listOf(mergeGroup(group))) }) { Text("🔗 ${ui.t("tidy.merge")}") }
+                if (quickMerge) Button(onClick = { vm.store.applyMerges(listOf(mergeGroup(group))) }) { Text("🔗 ${ui.t("tidy.merge")}") }
+                OutlinedButton(onClick = { vm.push(Screen.Merge(group.map { it.id })) }) { Text("✎ ${ui.t("tidy.mergeChoose")}") }
                 OutlinedButton(onClick = { delete() }, enabled = picked.isNotEmpty() && picked.size < group.size) {
                     Text("🗑 ${ui.t("tidy.deleteSel", "n" to picked.size)}")
                 }

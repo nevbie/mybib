@@ -71,6 +71,7 @@ fun Root(vm: AppViewModel) {
                         is Screen.Tidy -> TidyScreen(top)
                         is Screen.Covers -> CoversScreen(top)
                         is Screen.Rotate -> RotateScreen(top)
+                        is Screen.Merge -> MergeScreen(top)
                     }
                 }
             }
