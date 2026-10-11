@@ -30,6 +30,10 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
 - **Own cover photo**: tap the cover on an entry → take a photo or pick one from the gallery.
 - **Bulk edit**: *Select* in the library (or *All* of the current filter) → set room, status, rating, kind,
   format, wishlist, recommendation, add/remove a tag, clear "to check", or delete – for many entries at once.
+- **Tidy up** (Places → 🧹): finds probable duplicates (same ISBN, or same title, author, volume, kind and
+  format) – merge a group into its most complete entry (empty fields filled, best rating, notes, tags and loans
+  combined), delete just the copies you tick, or mark "not duplicates"; plus edit or delete everything matching
+  a filter (kind, wishlist/lent/to check, status, room, category, search) in one go.
 - **Places**: rooms (default Küche, Wohnzimmer, Kleines Zimmer) with counts; rename a room, or merge it
   into another by giving it that room's name; stats.
 - **Fill in missing info** for all books at once: cover, publisher, year, ISBN and blurb from Google Books

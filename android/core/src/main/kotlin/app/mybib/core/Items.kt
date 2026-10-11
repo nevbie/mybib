@@ -301,3 +301,70 @@ fun missingInfo(i: Item): List<String> = buildList {
 /** Books that could still gain details; [retry] includes those already looked up. */
 fun bulkTargets(items: List<Item>, retry: Boolean): List<Item> =
     items.filter { it.kind == "book" && missingInfo(it).isNotEmpty() && (retry || it.lookedUp == null) }
+
+/** Stable key of a duplicate group, so "not duplicates" can be remembered (changes when the group changes). */
+fun groupKey(group: List<Item>): String = group.map { it.id }.sorted().joinToString(",")
+
+/**
+ * Groups of probable duplicates – same ISBN, or same title + first creator + volume + kind + format
+ * (the rules of [findDuplicate]). Groups marked "not duplicates" ([ignored] keys) are left out.
+ */
+fun duplicateGroups(items: List<Item>, ignored: Collection<String> = emptyList()): List<List<Item>> {
+    val parent = IntArray(items.size) { it }
+    fun root(n: Int): Int {
+        var r = n
+        while (parent[r] != r) r = parent[r]
+        parent[n] = r
+        return r
+    }
+    val seen = HashMap<String, Int>()
+    items.forEachIndexed { n, i ->
+        val keys = buildList {
+            if (!i.isbn.isNullOrEmpty()) add("isbn:${i.isbn}")
+            val t = fold(i.title)
+            if (t.isNotEmpty()) add(listOf("t", t, i.creators.firstOrNull()?.let(::fold) ?: "", i.volume?.let(::fold) ?: "", i.kind, i.format).joinToString("\u0001"))
+        }
+        for (k in keys) {
+            val m = seen[k]
+            if (m == null) seen[k] = n else parent[root(n)] = root(m)
+        }
+    }
+    val skip = ignored.toSet()
+    return items.indices.groupBy(::root).values
+        .map { idx -> idx.map { items[it] } }
+        .filter { it.size > 1 && groupKey(it) !in skip }
+}
+
+private val statusRank = mapOf("none" to 0, "want" to 1, "active" to 2, "done" to 3)
+
+/** How much is filled in – the most complete entry of a group is kept when merging. */
+private fun completeness(i: Item): Int =
+    listOf(i.subtitle, i.publisher, i.year, i.isbn, i.language, i.series, i.volume, i.pages, i.description, i.coverUrl, i.coverData, i.category, i.room, i.notes)
+        .count { it != null && it != "" } + i.creators.size + i.tags.size + i.loans.size + (if (i.rating > 0) 1 else 0)
+
+class GroupMerge(val keep: Item, val remove: List<String>)
+
+/**
+ * Merge a duplicate group into one entry: keeps the most complete (on a tie the oldest) entry, fills its empty
+ * fields from the others, and combines what is personal – best rating, furthest status, recommendation,
+ * owned, notes, tags, loans.
+ */
+fun mergeGroup(group: List<Item>): GroupMerge {
+    val sorted = group.sortedWith(compareByDescending<Item> { completeness(it) }.thenBy { it.addedAt })
+    var keep = sorted.first()
+    for (other in sorted.drop(1)) keep = fillEmpty(keep, other) ?: keep
+    val notes = sorted.mapNotNull { it.notes?.trim()?.ifEmpty { null } }.distinct()
+    keep = keep.copy(
+        coverData = keep.coverData ?: sorted.firstNotNullOfOrNull { it.coverData },
+        creators = keep.creators.ifEmpty { sorted.firstOrNull { it.creators.isNotEmpty() }?.creators ?: emptyList() },
+        rating = sorted.maxOf { it.rating },
+        status = sorted.map { it.status }.reduce { a, b -> if ((statusRank[b] ?: 0) > (statusRank[a] ?: 0)) b else a },
+        recommend = sorted.any { it.recommend },
+        owned = sorted.any { it.owned },
+        tags = sorted.flatMap { it.tags }.distinct(),
+        notes = if (notes.isEmpty()) null else notes.joinToString("\n\n"),
+        loans = sorted.flatMap { it.loans }.distinctBy { it.to to it.since }.sortedBy { it.since },
+        addedAt = sorted.minOf { it.addedAt },
+    )
+    return GroupMerge(keep, sorted.drop(1).map { it.id })
+}

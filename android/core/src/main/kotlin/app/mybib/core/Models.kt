@@ -240,6 +240,8 @@ data class Settings(
     val categories: List<String> = emptyList(),
     /** "de" or "en"; null = phone language */
     val lang: String? = null,
+    /** duplicate groups marked "not duplicates" (see groupKey) */
+    val dupIgnore: List<String> = emptyList(),
 ) {
     fun toJson(): JsonObject = objOf(
         "claudeKey" to claudeKey,
@@ -249,6 +251,7 @@ data class Settings(
         "rooms" to rooms,
         "categories" to categories,
         "lang" to lang,
+        "dupIgnore" to dupIgnore,
     )
 
     companion object {
@@ -260,6 +263,7 @@ data class Settings(
             rooms = strList(j["rooms"]),
             categories = strList(j["categories"]),
             lang = str(j["lang"]),
+            dupIgnore = strList(j["dupIgnore"]),
         )
     }
 }

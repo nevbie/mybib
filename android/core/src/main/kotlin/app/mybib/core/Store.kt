@@ -109,6 +109,15 @@ class Store(
         changed()
     }
 
+    /** Replace each kept entry by its merged version and delete the rest (duplicate merging). */
+    fun applyMerges(merges: List<GroupMerge>) {
+        val now = nowIso()
+        val kept = merges.associate { it.keep.id to it.keep.copy(updatedAt = now) }
+        val gone = merges.flatMap { it.remove }.toSet()
+        _items.update { list -> list.filter { it.id !in gone }.map { kept[it.id] ?: it } }
+        changed()
+    }
+
     fun importItems(incoming: List<Item>, updateOnly: Boolean = false): MergeResult {
         val r = mergeItems(_items.value, incoming, updateOnly)
         _items.value = r.items

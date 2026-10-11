@@ -187,3 +187,46 @@ class CategoriesAndBulkTest {
         assertEquals(listOf("B", "C"), bulkTargets(listOf(full, bare, tried), true).map { it.title })
     }
 }
+
+class DuplicateTest {
+    @Test fun groupsByIsbnAndTitle() {
+        val a = item("id" to "a", "title" to "Momo", "creators" to listOf("Michael Ende"), "isbn" to "9783522202107")
+        val b = item("id" to "b", "title" to "momo", "creators" to listOf("Michael Ende"))
+        val c = item("id" to "c", "title" to "Anderes Buch", "isbn" to "9783522202107")
+        val d = item("id" to "d", "title" to "Momo", "creators" to listOf("Michael Ende"), "format" to "ebook")
+        val e = item("id" to "e", "title" to "Sahara", "creators" to listOf("A"))
+        val f = item("id" to "f", "title" to "Sahara", "creators" to listOf("B"))
+        val groups = duplicateGroups(listOf(a, b, c, d, e, f))
+        assertEquals(listOf(listOf("a", "b", "c")), groups.map { ids(it).sorted() })
+        assertTrue(duplicateGroups(listOf(a, b, c, d), listOf(groupKey(groups[0]))).isEmpty())
+    }
+
+    @Test fun mergesIntoMostCompleteEntry() {
+        val a = item("id" to "a", "title" to "Momo", "creators" to listOf("Michael Ende"), "rating" to 2, "status" to "want", "notes" to "Geschenk",
+            "addedAt" to "2026-01-02", "loans" to listOf(mapOf("to" to "Anna", "since" to "2026-02-01", "returned" to "2026-03-01")))
+        val b = item("id" to "b", "title" to "Momo", "creators" to listOf("Michael Ende"), "publisher" to "Thienemann", "year" to 1973, "isbn" to "9783522202107",
+            "coverUrl" to "http://c", "rating" to 5, "status" to "done", "tags" to listOf("Kinder"), "addedAt" to "2026-01-05", "owned" to false)
+        val m = mergeGroup(listOf(a, b))
+        assertEquals("b", m.keep.id)
+        assertEquals(listOf("a"), m.remove)
+        with(m.keep) {
+            assertEquals("Thienemann", publisher)
+            assertEquals(5, rating)
+            assertEquals("done", status)
+            assertEquals("Geschenk", notes)
+            assertTrue(owned)
+            assertEquals("2026-01-02", addedAt)
+            assertEquals(listOf("Kinder"), tags)
+            assertEquals(1, loans.size)
+        }
+    }
+
+    @Test fun storeAppliesMerges() {
+        val dir = kotlin.io.path.createTempDirectory().toFile()
+        val s = Store(dir)
+        s.replaceAll(listOf(item("id" to "a", "title" to "Momo"), item("id" to "b", "title" to "Momo", "publisher" to "T"), item("id" to "c", "title" to "Other")))
+        s.applyMerges(duplicateGroups(s.items.value).map(::mergeGroup))
+        assertEquals(listOf("b", "c"), ids(s.items.value))
+        assertEquals("T", s.items.value[0].publisher)
+    }
+}

@@ -29,6 +29,9 @@ sealed class Screen {
     /** "shelf" or "cover" */
     class Photo(val mode: String) : Screen()
 
+    /** Duplicates, bulk edit and bulk delete. */
+    class Tidy : Screen()
+
     class Bulk : Screen() {
         @Volatile var stop = false
 

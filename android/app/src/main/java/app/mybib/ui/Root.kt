@@ -68,6 +68,7 @@ fun Root(vm: AppViewModel) {
                         is Screen.Scan -> ScanScreen(top)
                         is Screen.Photo -> PhotoScreen(top)
                         is Screen.Bulk -> BulkScreen(top)
+                        is Screen.Tidy -> TidyScreen(top)
                     }
                 }
             }

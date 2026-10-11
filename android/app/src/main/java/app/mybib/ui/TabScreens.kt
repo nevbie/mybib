@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import app.mybib.BuildConfig
 import app.mybib.Screen
 import app.mybib.core.Filters
+import app.mybib.core.duplicateGroups
 import app.mybib.core.candidateDraft
 import app.mybib.core.kinds
 import app.mybib.core.summarizePlaces
@@ -150,6 +151,7 @@ fun PlacesScreen() {
     )).filter { it.second > 0 }
     val catCount = items.groupingBy { it.category ?: "" }.eachCount()
     val cats = (ui.categories + "").filter { (catCount[it] ?: 0) > 0 }
+    val dups = remember(items, ui.settings.dupIgnore) { duplicateGroups(items, ui.settings.dupIgnore).size }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Heading(ui.t("nav.places"))
@@ -160,6 +162,14 @@ fun PlacesScreen() {
                     Text("$n", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Small(label)
                 }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Card(Modifier.fillMaxWidth().clickable { vm.push(Screen.Tidy()) }) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("🧹 ${ui.t("tidy.title")}", fontWeight = FontWeight.Bold)
+                if (dups > 0) Pill(ui.t("tidy.dupCount", "n" to dups), color = Color(0xFFFFB300))
+                Small(ui.t("tidy.card"))
             }
         }
         if (cats.isNotEmpty() && !(cats.size == 1 && cats.first().isEmpty())) {
