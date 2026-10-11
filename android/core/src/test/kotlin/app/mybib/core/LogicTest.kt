@@ -196,8 +196,12 @@ class DuplicateTest {
         val d = item("id" to "d", "title" to "Momo", "creators" to listOf("Michael Ende"), "format" to "ebook")
         val e = item("id" to "e", "title" to "Sahara", "creators" to listOf("A"))
         val f = item("id" to "f", "title" to "Sahara", "creators" to listOf("B"))
-        val groups = duplicateGroups(listOf(a, b, c, d, e, f))
-        assertEquals(listOf(listOf("a", "b", "c")), groups.map { ids(it).sorted() })
+        val g1 = item("id" to "g1", "title" to "Der Papyrus des Cäsar", "creators" to listOf("Jean-Yves Ferri"), "volume" to "36")
+        val g2 = item("id" to "g2", "title" to "Der Papyrus des Cäsar", "volume" to "36")
+        val h1 = item("id" to "h1", "title" to "Asterix", "volume" to "1")
+        val h2 = item("id" to "h2", "title" to "Asterix", "volume" to "2")
+        val groups = duplicateGroups(listOf(a, b, c, d, e, f, g1, g2, h1, h2))
+        assertEquals(listOf(listOf("a", "b", "c"), listOf("g1", "g2")), groups.map { ids(it).sorted() })
         assertTrue(duplicateGroups(listOf(a, b, c, d), listOf(groupKey(groups[0]))).isEmpty())
     }
 

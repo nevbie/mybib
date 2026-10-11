@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,11 +54,13 @@ import androidx.compose.ui.unit.sp
 import app.mybib.Screen
 import app.mybib.core.Filters
 import app.mybib.core.applyFilters
+import app.mybib.core.mergeGroup
 import app.mybib.core.formats
 import app.mybib.core.kinds
 import app.mybib.core.sortItems
 import app.mybib.core.sortKeys
 import app.mybib.core.statuses
+import kotlinx.coroutines.launch
 
 @Composable
 fun LibraryScreen() {
@@ -74,6 +78,16 @@ fun LibraryScreen() {
     val sel = vm.selection
     val selected = if (sel == null) emptyList() else list.filter { it.id in sel }.map { it.id }
     var bulkEdit by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // merge the selected entries into one (e.g. the same book entered twice, once without author)
+    fun merge() = scope.launch {
+        val m = mergeGroup(list.filter { it.id in selected })
+        if (!vm.dialogs.confirm(ui.t("sel.mergeConfirm", "n" to selected.size, "title" to m.keep.title))) return@launch
+        vm.store.applyMerges(listOf(m))
+        vm.selection = null
+        vm.push(Screen.Detail(m.keep.id))
+    }
     fun set(nf: Filters) {
         vm.filters = nf
     }
@@ -145,6 +159,9 @@ fun LibraryScreen() {
                         Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(ui.t("sel.edit"))
+                    }
+                    IconButton(onClick = { merge() }, enabled = selected.size > 1) {
+                        Icon(Icons.Filled.MergeType, contentDescription = ui.t("sel.merge"))
                     }
                     IconButton(onClick = { vm.selection = null }) { Icon(Icons.Filled.Close, contentDescription = null) }
                 }

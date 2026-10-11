@@ -306,8 +306,9 @@ fun bulkTargets(items: List<Item>, retry: Boolean): List<Item> =
 fun groupKey(group: List<Item>): String = group.map { it.id }.sorted().joinToString(",")
 
 /**
- * Groups of probable duplicates – same ISBN, or same title + first creator + volume + kind + format
- * (the rules of [findDuplicate]). Groups marked "not duplicates" ([ignored] keys) are left out.
+ * Groups of probable duplicates: same ISBN, or same title, kind and format where author and volume match
+ * or are missing on one side (e.g. the same book entered once with and once without author).
+ * Groups marked "not duplicates" ([ignored] keys) are left out.
  */
 fun duplicateGroups(items: List<Item>, ignored: Collection<String> = emptyList()): List<List<Item>> {
     val parent = IntArray(items.size) { it }
@@ -317,16 +318,27 @@ fun duplicateGroups(items: List<Item>, ignored: Collection<String> = emptyList()
         parent[n] = r
         return r
     }
-    val seen = HashMap<String, Int>()
+    fun join(a: Int, b: Int) {
+        parent[root(a)] = root(b)
+    }
+    val byIsbn = HashMap<String, Int>()
+    val byTitle = LinkedHashMap<String, MutableList<Int>>()
     items.forEachIndexed { n, i ->
-        val keys = buildList {
-            if (!i.isbn.isNullOrEmpty()) add("isbn:${i.isbn}")
-            val t = fold(i.title)
-            if (t.isNotEmpty()) add(listOf("t", t, i.creators.firstOrNull()?.let(::fold) ?: "", i.volume?.let(::fold) ?: "", i.kind, i.format).joinToString("\u0001"))
+        val isbn = i.isbn
+        if (!isbn.isNullOrEmpty()) {
+            val m = byIsbn[isbn]
+            if (m == null) byIsbn[isbn] = n else join(n, m)
         }
-        for (k in keys) {
-            val m = seen[k]
-            if (m == null) seen[k] = n else parent[root(n)] = root(m)
+        val t = fold(i.title)
+        if (t.isNotEmpty()) byTitle.getOrPut(listOf(t, i.kind, i.format).joinToString("\u0001")) { mutableListOf() }.add(n)
+    }
+    fun fits(a: String, b: String) = a == b || a.isEmpty() || b.isEmpty()
+    fun creator(i: Item) = i.creators.firstOrNull()?.let(::fold) ?: ""
+    fun volume(i: Item) = i.volume?.let(::fold) ?: ""
+    for (list in byTitle.values) {
+        for (x in list.indices) for (y in x + 1 until list.size) {
+            val (i, j) = items[list[x]] to items[list[y]]
+            if (fits(creator(i), creator(j)) && fits(volume(i), volume(j))) join(list[x], list[y])
         }
     }
     val skip = ignored.toSet()
