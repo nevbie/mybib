@@ -69,22 +69,34 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
     var newRoom by remember { mutableStateOf("") }
     var addTag by remember { mutableStateOf("") }
     var checked by remember { mutableStateOf(false) }
+    /** UNCHANGED, "own" = remove own photos, "online" = remove online covers, "all" = both */
+    var cover by remember { mutableStateOf(UNCHANGED) }
 
     val items = ids.mapNotNull { ui.byId(it) }
     val live = items.map { it.id }
     val n = live.size
     val kindsUsed = items.map { it.kind }.toSet()
     val labelKind = if (kindsUsed.size == 1) kindsUsed.first() else "book"
+    val withOwn = items.count { it.coverData != null }
+    val withOnline = items.count { it.coverUrl != null }
     val allTags = items.flatMap { it.tags }.toSet().sorted()
     val un = Opt(UNCHANGED, ui.t("bulkEdit.unchanged"))
     val changes = listOf(
         room != UNCHANGED && (room != NEW || newRoom.isNotBlank()),
         category != UNCHANGED, status != UNCHANGED, kind != UNCHANGED, format != UNCHANGED,
         owned != UNCHANGED, recommend != UNCHANGED, rating != UNCHANGED,
-        addTag.isNotBlank(), removeTag.isNotEmpty(), checked,
+        addTag.isNotBlank(), removeTag.isNotEmpty(), checked, cover != UNCHANGED,
     ).count { it }
 
-    fun apply() {
+    fun apply() = scope.launch {
+        if (cover != UNCHANGED) {
+            val affected = when (cover) {
+                "own" -> withOwn
+                "online" -> withOnline
+                else -> n
+            }
+            if (!vm.dialogs.confirm(ui.t("bulkEdit.coverConfirm", "n" to affected))) return@launch
+        }
         val patch = linkedMapOf<String, Any?>()
         if (room != UNCHANGED) {
             val r = if (room == NEW) newRoom.trim() else if (room == NONE) "" else room
@@ -98,6 +110,8 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
         if (recommend != UNCHANGED) patch["recommend"] = recommend == "yes"
         if (rating != UNCHANGED) patch["rating"] = rating.toInt()
         if (checked) patch["needsCheck"] = false
+        if (cover == "own" || cover == "all") patch["coverData"] = null
+        if (cover == "online" || cover == "all") patch["coverUrl"] = null
         val tag = addTag.trim()
         val rm = removeTag
         vm.store.updateItems(live) { i ->
@@ -167,6 +181,14 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
                         Dropdown(ui.t("bulkEdit.removeTag"), removeTag, listOf(Opt("", "–")) + allTags.map { Opt(it, it) }, { removeTag = it }, Modifier.weight(1f))
                     }
                 }
+                Dropdown(
+                    "🖼 ${ui.t("bulkEdit.cover")}", cover,
+                    listOf(un) +
+                        (if (withOwn > 0) listOf(Opt("own", ui.t("bulkEdit.coverOwn", "n" to withOwn))) else emptyList()) +
+                        (if (withOnline > 0) listOf(Opt("online", ui.t("bulkEdit.coverOnline", "n" to withOnline))) else emptyList()) +
+                        (if (withOwn + withOnline > 0) listOf(Opt("all", ui.t("bulkEdit.coverAll"))) else emptyList()),
+                    { cover = it },
+                )
                 Row(Modifier.fillMaxWidth().clickable { checked = !checked }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = checked, onCheckedChange = { checked = it })
                     Text(ui.t("bulkEdit.checked"))
