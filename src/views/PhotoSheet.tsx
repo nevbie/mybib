@@ -4,7 +4,7 @@ import { Sheet } from '../components/Sheet'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { RecognizeError, toDraft } from '../logic/recognized'
-import { coverFromPhoto, cropCover, dataUrlBase64, photoForAI } from '../logic/image'
+import { coverFromPhoto, cropCover, dataUrlBase64, photoForAI, rotateDataUrl } from '../logic/image'
 import { completionPatch, findDuplicate, findMatch, newId } from '../logic/items'
 import { enrichPatch, matchScore, searchOnline } from '../logic/lookup'
 import { useStore } from '../store'
@@ -107,8 +107,9 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
             const big = await photoForAI(list[i])
             const recognized = await recognize(list[i], big)
             for (const f of recognized) {
-              const cut = recognized.length > 1 && f.box ? await cropCover(big, f.box) : null
-              const draft = { ...(toDraft(f) as Row['draft']), coverData: cut ?? whole }
+              // several covers: cut each one out; turned upright either way
+              const cut = recognized.length > 1 && f.box ? await cropCover(big, f.box, f.rotation ?? 0) : null
+              const draft = { ...(toDraft(f) as Row['draft']), coverData: cut ?? (await rotateDataUrl(whole, f.rotation ?? 0)) }
               const match = findMatch(items, draft)
               found.push({ key: newId(), draft, confidence: f.confidence, remark: f.remark, selected: true, target: match && { id: match.id, title: match.title }, update: !!match })
             }

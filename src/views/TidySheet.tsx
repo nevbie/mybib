@@ -54,9 +54,14 @@ export function TidySheet() {
       )}
       <h2>{t('covers.title')}</h2>
       <p className="muted small">{t('covers.card', { n: noCover })}</p>
-      <button className="btn" onClick={() => ui.open({ type: 'covers' })}>
-        📷 {t('covers.title')}
-      </button>
+      <div className="row gap wrap">
+        <button className="btn" onClick={() => ui.open({ type: 'covers' })}>
+          📷 {t('covers.title')}
+        </button>
+        <button className="btn" onClick={() => ui.open({ type: 'rotate' })}>
+          ⟳ {t('rotate.title')}
+        </button>
+      </div>
       <BulkByFilter />
     </Sheet>
   )

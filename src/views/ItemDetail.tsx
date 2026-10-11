@@ -4,7 +4,7 @@ import { Sheet } from '../components/Sheet'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { knownPeople, openLoan, today } from '../logic/items'
-import { coverFromPhoto } from '../logic/image'
+import { coverFromPhoto, rotateDataUrl } from '../logic/image'
 import { enrichPatch } from '../logic/lookup'
 import { CategorySelect } from '../components/CategorySelect'
 import { useStore } from '../store'
@@ -141,6 +141,11 @@ export function ItemDetail({ id }: { id: string }) {
           <button className="btn small" onClick={() => galRef.current?.click()}>
             🖼 {t('cover.gallery')}
           </button>
+          {item.coverData && (
+            <button className="btn small" onClick={async () => up({ coverData: await rotateDataUrl(item.coverData!, 90) })} aria-label={t('rotate.right')}>
+              ⟳ {t('rotate.turn')}
+            </button>
+          )}
           {item.coverData && (
             <button className="btn small ghost" onClick={() => (up({ coverData: undefined }), setCoverMenu(false))}>
               {item.coverUrl ? t('cover.useOnline') : t('form.coverRemove')}

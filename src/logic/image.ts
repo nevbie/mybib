@@ -26,7 +26,7 @@ export const photoForAI = (file: Blob) => resizeImage(file, 2400, 0.88)
  * Cut one cover out of a photo with several (box in thousandths of width/height, as Claude reports it),
  * with a small margin, as a cover thumbnail. Returns null when the box is unusable.
  */
-export async function cropCover(dataUrl: string, box: { x0: number; y0: number; x1: number; y1: number }): Promise<string | null> {
+export async function cropCover(dataUrl: string, box: { x0: number; y0: number; x1: number; y1: number }, rotation = 0): Promise<string | null> {
   const img = new Image()
   img.src = dataUrl
   await img.decode()
@@ -42,9 +42,29 @@ export async function cropCover(dataUrl: string, box: { x0: number; y0: number; 
   const sh = (Math.min(1, y1) - Math.max(0, y0)) * img.naturalHeight
   if (sw < 20 || sh < 20) return null
   const scale = Math.min(1, 480 / Math.max(sw, sh))
+  return draw(img, sx, sy, sw, sh, scale, rotation)
+}
+
+/** Draw a part of an image scaled and turned clockwise by 0/90/180/270 degrees, as JPEG data URL. */
+function draw(img: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, scale: number, rotation: number): string {
+  const r = ((rotation % 360) + 360) % 360
+  const w = Math.round(sw * scale)
+  const h = Math.round(sh * scale)
   const canvas = document.createElement('canvas')
-  canvas.width = Math.round(sw * scale)
-  canvas.height = Math.round(sh * scale)
-  canvas.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.8)
+  canvas.width = r === 90 || r === 270 ? h : w
+  canvas.height = r === 90 || r === 270 ? w : h
+  const g = canvas.getContext('2d')!
+  g.translate(canvas.width / 2, canvas.height / 2)
+  g.rotate((r * Math.PI) / 180)
+  g.drawImage(img, sx, sy, sw, sh, -w / 2, -h / 2, w, h)
+  return canvas.toDataURL('image/jpeg', 0.85)
+}
+
+/** Turn a cover photo clockwise by 90/180/270 degrees. */
+export async function rotateDataUrl(dataUrl: string, rotation: number): Promise<string> {
+  if (!(((rotation % 360) + 360) % 360)) return dataUrl
+  const img = new Image()
+  img.src = dataUrl
+  await img.decode()
+  return draw(img, 0, 0, img.naturalWidth, img.naturalHeight, 1, rotation)
 }

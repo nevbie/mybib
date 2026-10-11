@@ -16,6 +16,8 @@ export interface Recognized {
   remark: string
   /** where the cover/spine is in the photo, in thousandths of width/height – used to cut out cover photos */
   box?: { x0: number; y0: number; x1: number; y1: number }
+  /** degrees to turn the cut-out clockwise so it reads upright */
+  rotation?: number
 }
 
 export class RecognizeError extends Error {
