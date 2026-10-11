@@ -78,6 +78,15 @@ fun TidyScreen(screen: Screen.Tidy) {
                     }
                 }
             }
+            item {
+                val noCover = ui.items.count { it.coverData == null && it.coverUrl == null }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(ui.t("covers.title"), style = MaterialTheme.typography.titleMedium)
+                    Small(ui.t("covers.card", "n" to noCover))
+                    OutlinedButton(onClick = { vm.push(Screen.Covers()) }) { Text("📷 ${ui.t("covers.title")}") }
+                }
+            }
             item { BulkByFilter(screen) }
         }
     }

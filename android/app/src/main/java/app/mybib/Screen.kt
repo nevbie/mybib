@@ -32,6 +32,9 @@ sealed class Screen {
     /** Duplicates, bulk edit and bulk delete. */
     class Tidy : Screen()
 
+    /** Add cover photos to existing entries: [ids], or all entries without a cover when null. */
+    class Covers(val ids: List<String>? = null) : Screen()
+
     class Bulk : Screen() {
         @Volatile var stop = false
 

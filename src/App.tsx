@@ -4,6 +4,7 @@ import { useUI, type TabId } from './ui'
 import { AddView } from './views/AddView'
 import { BulkEditSheet } from './views/BulkEditSheet'
 import { TidySheet } from './views/TidySheet'
+import { CoversSheet } from './views/CoversSheet'
 import { BulkSheet } from './views/BulkSheet'
 import { ItemDetail } from './views/ItemDetail'
 import { ItemForm } from './views/ItemForm'
@@ -58,6 +59,8 @@ export function App() {
             return <BulkSheet key={i} />
           case 'tidy':
             return <TidySheet key={i} />
+          case 'covers':
+            return <CoversSheet key={i} ids={o.ids} />
           case 'scan':
             return <ScanSheet key={i} />
           case 'photo':

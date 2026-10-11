@@ -23,7 +23,8 @@ interface Row {
 /**
  * Add by photo.
  * - shelf: one or more shelf photos → Claude reads all spines → review list → add.
- * - cover: one front cover → (with key) recognise title → online details → form; own photo becomes the cover.
+ * - cover: one or many front covers (one item per photo) → (with key) titles recognised → review list → add;
+ *   each photo becomes that entry's cover.
  */
 export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
   const { t } = useLang()
@@ -56,7 +57,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return
     const list = [...files]
-    if (mode === 'cover') return onCover(list[0])
+    if (mode === 'cover') return onCovers(list)
     setBusy(true)
     abortRef.current = new AbortController()
     try {
@@ -84,37 +85,45 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
     }
   }
 
-  const onCover = async (file: File) => {
+  /** Each photo becomes one entry with the photo as its cover; with a key Claude reads the title. */
+  const onCovers = async (list: File[]) => {
     setBusy(true)
+    abortRef.current = new AbortController()
     try {
-      const coverData = await coverFromPhoto(file)
-      let draft: ItemDraft = { title: '', coverData, room: room || undefined }
-      if (hasKey) {
-        setStatus(t('ai.readingCover'))
-        abortRef.current = new AbortController()
-        try {
-          const [first] = await recognize(file)
-          if (first) {
-            draft = { ...draft, ...toDraft(first), coverData, source: 'search' }
-            setStatus(t('ai.enriching'))
-            const found = await searchOnline(first.kind, first.title, first.creators[0] ?? '', settings.googleBooksKey)
-            const best = found.find((c) => matchScore(first, c) >= 0.75)
-            if (best) draft = { ...draft, ...enrichPatch(draft, best), coverUrl: undefined, needsCheck: undefined }
+      for (let i = 0; i < list.length; i++) {
+        setStatus(t('ai.readingCovers', { i: i + 1, n: list.length }))
+        const coverData = await coverFromPhoto(list[i])
+        let draft: Row['draft'] = { title: '', kind: 'book', creators: [], coverData, source: 'manual' }
+        let confidence: Row['confidence'] = 'high'
+        let remark = ''
+        if (hasKey) {
+          try {
+            const [first] = await recognize(list[i])
+            if (first) {
+              draft = { ...(toDraft(first) as Row['draft']), coverData, source: 'ai' }
+              confidence = first.confidence
+              remark = first.remark
+            }
+          } catch (e) {
+            if ((e as Error).name === 'AbortError' || abortRef.current.signal.aborted) break
+            alert(errorText(e))
+            if (e instanceof RecognizeError && e.code === 'auth') break
           }
-        } catch (e) {
-          alert(errorText(e))
         }
+        setRows((r) => {
+          const dup = draft.title ? (findDuplicate(items, draft) ?? r.map((x) => x.draft).find((x) => x.title === draft.title && x.volume === draft.volume)) : undefined
+          return [...r, { key: newId(), draft, confidence, remark, selected: !dup, dupTitle: dup?.title }]
+        })
       }
-      ui.close()
-      setTimeout(() => ui.openForm(undefined, draft), 50)
     } finally {
-      setBusy(false)
       setStatus('')
+      setBusy(false)
     }
   }
 
   const upd = (key: string, patch: Partial<Row> | ((r: Row) => Partial<Row>)) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...(typeof patch === 'function' ? patch(r) : patch) } : r)))
-  const selected = rows.filter((r) => r.selected)
+  // an entry needs a title – without a key it is typed into the list
+  const selected = rows.filter((r) => r.selected && r.draft.title.trim())
 
   const addAll = async () => {
     setBusy(true)
@@ -126,8 +135,8 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
           setStatus(t('ai.enrichingN', { i: i + 1, n: selected.length }))
           const found = await searchOnline(d.kind!, d.title, d.creators?.[0] ?? '', settings.googleBooksKey).catch(() => [])
           const best = found.find((c) => matchScore(d as { title: string; creators?: string[] }, c) >= 0.75)
-          // keep the title as printed on the spine, only fill gaps
-          if (best) d = { ...d, ...enrichPatch(d, best) }
+          // keep the title as printed on the spine, only fill gaps; an own cover photo stays the cover
+          if (best) d = { ...d, ...enrichPatch(d, best), ...(d.coverData ? { coverUrl: undefined } : {}) }
           // MusicBrainz asks for max. 1 request per second
           if (d.kind === 'cd') await new Promise((r) => setTimeout(r, 1000))
         }
@@ -167,6 +176,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
         </div>
       )}
       {mode === 'cover' && <p className="muted small">{hasKey ? t('ai.coverHint') : t('ai.coverNoKey')}</p>}
+      {mode === 'cover' && <p className="muted small">{t('ai.coversMany')}</p>}
       {mode === 'shelf' && hasKey && <p className="muted small">{t('ai.shelfHint')}</p>}
 
       <div className="row gap">
@@ -183,7 +193,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
         </button>
       </div>
       <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (onFiles(e.target.files), (e.target.value = ''))} />
-      <input ref={galRef} type="file" accept="image/*" multiple={mode === 'shelf'} hidden onChange={(e) => (onFiles(e.target.files), (e.target.value = ''))} />
+      <input ref={galRef} type="file" accept="image/*" multiple hidden onChange={(e) => (onFiles(e.target.files), (e.target.value = ''))} />
 
       {status && (
         <p className="busy">
@@ -194,7 +204,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
       {rows.length > 0 && (
         <>
           <div className="row between center">
-            <h3>{t('ai.found', { n: rows.length })}</h3>
+            <h3>{mode === 'cover' ? t('ai.photosN', { n: rows.length }) : t('ai.found', { n: rows.length })}</h3>
             <button className="link" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, selected: !selected.length })))}>
               {selected.length ? t('ai.none') : t('ai.all')}
             </button>
@@ -207,8 +217,9 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
             {rows.map((r) => (
               <div key={r.key} className={`review-row ${r.selected ? '' : 'off'}`}>
                 <input type="checkbox" checked={r.selected} onChange={(e) => upd(r.key, { selected: e.target.checked })} aria-label={t('ai.take')} />
+                {r.draft.coverData && <img className="review-cover" src={r.draft.coverData} alt="" />}
                 <div className="col">
-                  <input className="review-title" value={r.draft.title} onChange={(e) => upd(r.key, (x) => ({ draft: { ...x.draft, title: e.target.value } }))} aria-label={t('field.title')} />
+                  <input className="review-title" value={r.draft.title} placeholder={`${t('field.title')} *`} onChange={(e) => upd(r.key, (x) => ({ draft: { ...x.draft, title: e.target.value } }))} aria-label={t('field.title')} />
                   <input className="review-sub" value={r.draft.creators.join(', ')} placeholder={t(`creator.${r.draft.kind}`)} onChange={(e) => upd(r.key, (x) => ({ draft: { ...x.draft, creators: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) } }))} aria-label={t(`creator.${r.draft.kind}`)} />
                   <div className="row gap center small">
                     <select value={r.draft.kind} onChange={(e) => upd(r.key, (x) => ({ draft: { ...x.draft, kind: e.target.value as Kind } }))} aria-label={t('field.kind')}>

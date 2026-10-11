@@ -961,3 +961,26 @@ summary {
 .dup-row > .row {
   padding: 0 10px;
 }
+
+/* Cover photos */
+.review-cover {
+  width: 44px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: none;
+}
+.cover-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 12px;
+}
+.cover-row:last-child {
+  border-bottom: none;
+}
+.cover-row .item-row-main {
+  flex: 1;
+  min-width: 0;
+}

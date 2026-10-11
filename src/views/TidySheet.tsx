@@ -16,6 +16,7 @@ export function TidySheet() {
   const { t } = useLang()
   const ui = useUI()
   const { items, settings, updateSettings, applyMerges, removeItems } = useStore()
+  const noCover = useMemo(() => items.filter((i) => !i.coverData && !i.coverUrl).length, [items])
   const groups = useMemo(() => duplicateGroups(items, settings.dupIgnore), [items, settings.dupIgnore])
 
   const mergeAll = () => {
@@ -51,6 +52,11 @@ export function TidySheet() {
           </button>
         </p>
       )}
+      <h2>{t('covers.title')}</h2>
+      <p className="muted small">{t('covers.card', { n: noCover })}</p>
+      <button className="btn" onClick={() => ui.open({ type: 'covers' })}>
+        📷 {t('covers.title')}
+      </button>
       <BulkByFilter />
     </Sheet>
   )

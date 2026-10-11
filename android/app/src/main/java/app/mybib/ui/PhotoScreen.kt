@@ -3,6 +3,10 @@
 package app.mybib.ui
 
 import android.net.Uri
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -88,7 +92,8 @@ class PhotoState {
 /**
  * Add by photo.
  * - shelf: one or more shelf photos → Claude reads all spines → review list → add.
- * - cover: one front cover → (with key) recognise title → online details → form; own photo becomes the cover.
+ * - cover: one or many front covers (one item per photo) → (with key) titles recognised → review list → add;
+ *   each photo becomes that entry's cover.
  */
 @Composable
 fun PhotoScreen(screen: Screen.Photo) {
@@ -99,7 +104,8 @@ fun PhotoScreen(screen: Screen.Photo) {
     val st = screen.keep("photo") { PhotoState() }
     val shelf = screen.mode == "shelf"
     val hasKey = ui.settings.claudeKey.isNotEmpty()
-    val selected = st.rows.count { it.selected }
+    // an entry needs a title – without a key it is typed into the list
+    val selected = st.rows.count { it.selected && it.title.isNotBlank() }
     val room = st.room ?: ui.settings.lastRoom
 
     fun err(e: Exception) =
@@ -132,40 +138,46 @@ fun PhotoScreen(screen: Screen.Photo) {
         st.status = ""
     }
 
-    suspend fun readCover(uri: Uri) {
-        // one photo, large enough to read the title and small enough to keep as the cover
-        val jpeg = withContext(Dispatchers.IO) { loadJpeg(ctx, uri, 1000, 80) } ?: return
-        val coverData = dataUrl(jpeg)
-        var draft: Draft = draftOf("title" to "", "coverData" to coverData, "room" to room.ifEmpty { null })
-        if (vm.store.settings.value.claudeKey.isNotEmpty()) {
-            st.busy = true
-            st.status = ui.t("ai.readingCover")
-            try {
-                val first = recognize(jpeg).firstOrNull()
-                if (first != null) {
-                    draft = draft + first.toDraft() + draftOf("coverData" to coverData, "source" to "search")
-                    st.status = ui.t("ai.enriching")
-                    val found = vm.lookup.searchOnline(first.kind, first.title, first.creators.firstOrNull() ?: "", vm.store.settings.value.googleBooksKey)
-                    val best = found.firstOrNull { matchScore(first.title, first.creators, it) >= 0.75 }
-                    if (best != null) draft = (draft + enrichPatch(draft, best) + draftOf("needsCheck" to false)) - "coverUrl"
+    /** Each photo becomes one entry with the photo as its cover; with a key Claude reads the title. */
+    suspend fun readCovers(photos: List<Uri>) {
+        st.busy = true
+        for ((n, uri) in photos.withIndex()) {
+            st.status = ui.t("ai.readingCovers", "i" to n + 1, "n" to photos.size)
+            // large enough to read the title, small enough to keep as the cover
+            val jpeg = withContext(Dispatchers.IO) { loadJpeg(ctx, uri, 1000, 80) } ?: continue
+            val coverData = dataUrl(jpeg)
+            var draft: Draft = draftOf("title" to "", "kind" to "book", "coverData" to coverData, "source" to "manual")
+            var confidence = "high"
+            var remark = ""
+            if (vm.store.settings.value.claudeKey.isNotEmpty()) {
+                try {
+                    val first = recognize(jpeg).firstOrNull()
+                    if (first != null) {
+                        draft = first.toDraft() + draftOf("coverData" to coverData)
+                        confidence = first.confidence
+                        remark = first.remark
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    vm.dialogs.info(err(e))
+                    if (e is RecognizeError && e.code == "auth") break
                 }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                vm.dialogs.info(err(e))
             }
+            val title = draft["title"].string ?: ""
+            val dup = if (title.isEmpty()) null else findDuplicateOf(vm.store.items.value, normalizeItem(draft))?.title
+                ?: st.rows.firstOrNull { it.title == title && it.base["volume"] == draft["volume"] }?.title
+            st.rows.add(PhotoRow(draft, confidence, remark, dup == null, dup))
         }
         st.busy = false
         st.status = ""
-        vm.pop()
-        vm.push(Screen.Form(draft = draft))
     }
 
-    val picker = rememberPhotoPicker(multiple = shelf) { uris ->
-        scope.launch { if (shelf) readShelf(uris) else readCover(uris.first()) }
+    val picker = rememberPhotoPicker(multiple = true) { uris ->
+        scope.launch { if (shelf) readShelf(uris) else readCovers(uris) }
     }
 
     fun addAll() = scope.launch {
-        val sel = st.rows.filter { it.selected }
+        val sel = st.rows.filter { it.selected && it.title.isNotBlank() }
         val r0 = room
         st.busy = true
         val drafts = mutableListOf<Draft>()
@@ -183,8 +195,8 @@ fun PhotoScreen(screen: Screen.Photo) {
                     emptyList()
                 }
                 val best = found.firstOrNull { matchScore(title, creators, it) >= 0.75 }
-                // keep the title as printed on the spine, only fill gaps
-                if (best != null) d = d + enrichPatch(d, best)
+                // keep the title as printed on the spine, only fill gaps; an own cover photo stays the cover
+                if (best != null) d = (d + enrichPatch(d, best)).let { if (it["coverData"].string != null) it - "coverUrl" else it }
                 // MusicBrainz asks for max. 1 request per second
                 if (kind == "cd") delay(1000)
             }
@@ -215,6 +227,7 @@ fun PhotoScreen(screen: Screen.Photo) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (shelf && !hasKey) HintCard { Text(ui.t("ai.noKey"), color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.87f)) }
                     if (!shelf) Small(if (hasKey) ui.t("ai.coverHint") else ui.t("ai.coverNoKey"))
+                    if (!shelf) Small(ui.t("ai.coversMany"))
                     if (shelf && hasKey) Small(ui.t("ai.shelfHint"))
                     SuggestField(room, ui.rooms, ui.t("field.room"), { st.room = it.trim() })
                     if (hasKey) {
@@ -234,7 +247,7 @@ fun PhotoScreen(screen: Screen.Photo) {
                     }
                     if (st.rows.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(ui.t("ai.found", "n" to st.rows.size), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text(if (shelf) ui.t("ai.found", "n" to st.rows.size) else ui.t("ai.photosN", "n" to st.rows.size), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                             TextButton(onClick = {
                                 val all = selected == 0
                                 st.rows.forEach { it.selected = all }
@@ -257,12 +270,19 @@ private fun RowCard(r: PhotoRow) {
     Card(Modifier.fillMaxWidth().alpha(if (r.selected) 1f else 0.5f)) {
         Row(Modifier.padding(start = 4.dp, top = 4.dp, end = 12.dp, bottom = 8.dp)) {
             Checkbox(checked = r.selected, onCheckedChange = { r.selected = it })
+            coverBitmap(r.base["coverData"].string)?.let {
+                Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.padding(top = 10.dp, end = 10.dp).size(44.dp, 64.dp).clip(RoundedCornerShape(4.dp)))
+            }
             Column(Modifier.weight(1f).padding(top = 12.dp)) {
                 BasicTextField(
                     r.title, { r.title = it },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold, color = cs.onSurface),
                     cursorBrush = SolidColor(cs.primary),
                     modifier = Modifier.fillMaxWidth(),
+                    decorationBox = { inner ->
+                        if (r.title.isEmpty()) Text("${ui.t("field.title")} *", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant)
+                        inner()
+                    },
                 )
                 BasicTextField(
                     r.creators, { r.creators = it },
