@@ -31,9 +31,13 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
   const [addTag, setAddTag] = useState('')
   const [removeTag, setRemoveTag] = useState('')
   const [checked, setChecked] = useState(false)
+  /** '' = keep, 'own' = remove own photos, 'online' = remove online covers, 'all' = both */
+  const [cover, setCover] = useState<Choice>('')
 
   const live = ids.filter((id) => byId.has(id))
   const n = live.length
+  const withOwn = live.filter((id) => byId.get(id)!.coverData).length
+  const withOnline = live.filter((id) => byId.get(id)!.coverUrl).length
   const allTags = [...new Set(live.flatMap((id) => byId.get(id)!.tags))].sort()
   const kindForLabels = (() => {
     const kinds = new Set(live.map((id) => byId.get(id)!.kind))
@@ -41,7 +45,7 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
   })()
 
   const targetRoom = room === NEW_ROOM ? newRoom.trim() : room === NONE_ROOM ? '' : room
-  const changes = [room && (room !== NEW_ROOM || newRoom.trim()), category, kind, status, format, owned, recommend, rating, addTag.trim(), removeTag, checked].filter(Boolean).length
+  const changes = [room && (room !== NEW_ROOM || newRoom.trim()), category, kind, status, format, owned, recommend, rating, addTag.trim(), removeTag, checked, cover].filter(Boolean).length
 
   const apply = () => {
     const patch: Partial<Item> = {}
@@ -54,6 +58,9 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
     if (recommend) patch.recommend = recommend === 'yes'
     if (rating) patch.rating = Number(rating)
     if (checked) patch.needsCheck = undefined
+    if (cover === 'own' || cover === 'all') patch.coverData = undefined
+    if (cover === 'online' || cover === 'all') patch.coverUrl = undefined
+    if (cover && !confirm(t('bulkEdit.coverConfirm', { n: cover === 'own' ? withOwn : cover === 'online' ? withOnline : n }))) return
     const tag = addTag.trim()
     updateItems(live, (i) => ({
       ...patch,
@@ -197,6 +204,21 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
           </label>
         )}
       </div>
+      <label>
+        🖼 {t('bulkEdit.cover')}
+        <select value={cover} onChange={(e) => setCover(e.target.value)}>
+          {unchanged}
+          <option value="own" disabled={!withOwn}>
+            {t('bulkEdit.coverOwn', { n: withOwn })}
+          </option>
+          <option value="online" disabled={!withOnline}>
+            {t('bulkEdit.coverOnline', { n: withOnline })}
+          </option>
+          <option value="all" disabled={!withOwn && !withOnline}>
+            {t('bulkEdit.coverAll')}
+          </option>
+        </select>
+      </label>
       <label className="toggle">
         <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
         {t('bulkEdit.checked')}
