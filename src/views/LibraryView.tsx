@@ -3,7 +3,7 @@ import { CategorySelect } from '../components/CategorySelect'
 import { ItemRow } from '../components/ItemRow'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
-import { applyFilters, EMPTY_FILTERS, mergeGroup, openLoan, sortItems, type Filters, type SortKey } from '../logic/items'
+import { applyFilters, EMPTY_FILTERS, openLoan, sortItems, type Filters, type SortKey } from '../logic/items'
 import { useStore } from '../store'
 import { FORMATS, KINDS, STATUSES } from '../types'
 import { useUI } from '../ui'
@@ -15,7 +15,7 @@ const PAGE = 120
 
 export function LibraryView() {
   const { t, lang } = useLang()
-  const { items, ready, applyMerges } = useStore()
+  const { items, ready } = useStore()
   const ui = useUI()
   const f = ui.filters
   const set = (patch: Partial<Filters>) => ui.setFilters({ ...f, ...patch })
@@ -44,13 +44,10 @@ export function LibraryView() {
       else n.add(id)
       return n
     })
-  // merge the selected entries into one (e.g. the same book entered twice, once without author)
+  // merge the selected entries into one, choosing which cover, author … to keep
   const merge = () => {
-    const m = mergeGroup(list.filter((i) => sel?.has(i.id)))
-    if (!confirm(t('sel.mergeConfirm', { n: selected.length, title: m.keep.title }))) return
-    applyMerges([m])
+    ui.open({ type: 'merge', ids: selected })
     setSel(null)
-    ui.openItem(m.keep.id)
   }
   const extraActive = [f.status !== 'all', f.format !== 'all', f.room !== 'all', f.category !== 'all', f.minRating > 0].filter(Boolean).length
 

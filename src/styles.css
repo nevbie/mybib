@@ -984,3 +984,57 @@ summary {
   flex: 1;
   min-width: 0;
 }
+
+/* Merge with choices */
+.merge-field {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 12px 10px;
+  margin: 10px 0;
+}
+.merge-field legend {
+  font-weight: 600;
+  padding: 0 4px;
+}
+.merge-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.merge-options.covers {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.merge-option {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  text-align: left;
+  font-weight: normal;
+  font-size: 0.95rem;
+  color: var(--text, inherit);
+  margin: 0;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  word-break: break-word;
+}
+.merge-option input {
+  width: auto;
+  flex: none;
+  margin: 0;
+}
+.merge-option > span {
+  flex: 1;
+}
+.merge-option.on {
+  border-color: var(--accent, #0f766e);
+  background: color-mix(in srgb, var(--accent, #0f766e) 10%, transparent);
+}
+details.similar summary {
+  cursor: pointer;
+  margin: 14px 0 6px;
+}

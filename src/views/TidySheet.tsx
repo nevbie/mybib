@@ -4,7 +4,7 @@ import { ItemRow } from '../components/ItemRow'
 import { Sheet } from '../components/Sheet'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
-import { applyFilters, duplicateGroups, EMPTY_FILTERS, groupKey, mergeGroup, type Filters } from '../logic/items'
+import { applyFilters, duplicateGroups, EMPTY_FILTERS, groupKey, mergeGroup, similarGroups, type Filters } from '../logic/items'
 import { useStore } from '../store'
 import { KINDS, STATUSES, type Item } from '../types'
 import { useUI } from '../ui'
@@ -18,6 +18,8 @@ export function TidySheet() {
   const { items, settings, updateSettings, applyMerges, removeItems } = useStore()
   const noCover = useMemo(() => items.filter((i) => !i.coverData && !i.coverUrl).length, [items])
   const groups = useMemo(() => duplicateGroups(items, settings.dupIgnore), [items, settings.dupIgnore])
+  // same title, but author/volume/format differ – maybe the same thing, maybe not: merged only by hand
+  const similar = useMemo(() => similarGroups(items, settings.dupIgnore, new Set(groups.flat().map((i) => i.id))), [items, settings.dupIgnore, groups])
 
   const mergeAll = () => {
     const merges = groups.map(mergeGroup)
@@ -44,6 +46,17 @@ export function TidySheet() {
           ))}
         </>
       )}
+      {similar.length > 0 && (
+        <details className="similar">
+          <summary>
+            <strong>{t('tidy.similar', { n: similar.length })}</strong>
+          </summary>
+          <p className="muted small">{t('tidy.similarIntro')}</p>
+          {similar.map((g) => (
+            <DupGroup key={groupKey(g)} group={g} onDelete={(ids) => removeItems(ids)} onIgnore={() => ignore(g)} />
+          ))}
+        </details>
+      )}
       {settings.dupIgnore.length > 0 && (
         <p className="muted small">
           {t('tidy.ignored', { n: settings.dupIgnore.length })}{' '}
@@ -67,7 +80,8 @@ export function TidySheet() {
   )
 }
 
-function DupGroup({ group, onMerge, onDelete, onIgnore }: { group: Item[]; onMerge(): void; onDelete(ids: string[]): void; onIgnore(): void }) {
+/** One group of (probable) duplicates; without `onMerge` only the merge with choices is offered. */
+function DupGroup({ group, onMerge, onDelete, onIgnore }: { group: Item[]; onMerge?(): void; onDelete(ids: string[]): void; onIgnore(): void }) {
   const { t } = useLang()
   const ui = useUI()
   const [sel, setSel] = useState<Set<string>>(new Set())
@@ -90,7 +104,7 @@ function DupGroup({ group, onMerge, onDelete, onIgnore }: { group: Item[]; onMer
           <div key={i.id} className="dup-row">
             <ItemRow item={i} selected={sel.has(i.id)} onClick={() => toggle(i.id)} />
             <span className="row center between">
-              {i.id === keepId ? <span className="badge badge-rec">✓ {t('tidy.keep')}</span> : <span />}
+              {onMerge && i.id === keepId ? <span className="badge badge-rec">✓ {t('tidy.keep')}</span> : <span />}
               <button className="link small" onClick={() => ui.openItem(i.id)}>
                 {t('tidy.open')}
               </button>
@@ -99,8 +113,13 @@ function DupGroup({ group, onMerge, onDelete, onIgnore }: { group: Item[]; onMer
         ))}
       </div>
       <div className="row gap wrap">
-        <button className="btn small primary" onClick={onMerge}>
-          🔗 {t('tidy.merge')}
+        {onMerge && (
+          <button className="btn small primary" onClick={onMerge}>
+            🔗 {t('tidy.merge')}
+          </button>
+        )}
+        <button className={onMerge ? 'btn small' : 'btn small primary'} onClick={() => ui.open({ type: 'merge', ids: group.map((i) => i.id) })}>
+          ✎ {t('tidy.mergeChoose')}
         </button>
         <button className="btn small danger ghost" onClick={del} disabled={!picked.length || picked.length === group.length}>
           🗑 {t('tidy.deleteSel', { n: picked.length })}

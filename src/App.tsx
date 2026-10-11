@@ -6,6 +6,7 @@ import { BulkEditSheet } from './views/BulkEditSheet'
 import { TidySheet } from './views/TidySheet'
 import { CoversSheet } from './views/CoversSheet'
 import { RotateSheet } from './views/RotateSheet'
+import { MergeSheet } from './views/MergeSheet'
 import { BulkSheet } from './views/BulkSheet'
 import { ItemDetail } from './views/ItemDetail'
 import { ItemForm } from './views/ItemForm'
@@ -64,6 +65,8 @@ export function App() {
             return <CoversSheet key={i} ids={o.ids} />
           case 'rotate':
             return <RotateSheet key={i} ids={o.ids} />
+          case 'merge':
+            return <MergeSheet key={i} ids={o.ids} />
           case 'scan':
             return <ScanSheet key={i} />
           case 'photo':
