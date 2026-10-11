@@ -438,3 +438,37 @@ export function mergeGroup(group: Item[]): { keep: Item; remove: string[] } {
   keep.addedAt = all.map((i) => i.addedAt).sort()[0]
   return { keep, remove: sorted.slice(1).map((i) => i.id) }
 }
+
+/**
+ * Existing entry a newly recognised item probably is: same ISBN, or same title and kind where author and
+ * volume match or are missing on one side (looser than `findDuplicate`, for adding covers to what is there).
+ */
+export function findMatch(items: Item[], d: { isbn?: string; title: string; creators?: string[]; volume?: string; kind?: Kind }): Item | undefined {
+  if (d.isbn) {
+    const hit = items.find((i) => i.isbn === d.isbn)
+    if (hit) return hit
+  }
+  const t = fold(d.title)
+  if (!t) return undefined
+  const c = d.creators?.[0] ? fold(d.creators[0]) : ''
+  const v = d.volume ? fold(d.volume) : ''
+  const fits = (a: string, b: string) => a === b || !a || !b
+  const hits = items.filter(
+    (i) => fold(i.title) === t && (!d.kind || i.kind === d.kind) && fits(i.creators[0] ? fold(i.creators[0]) : '', c) && fits(i.volume ? fold(i.volume) : '', v),
+  )
+  // a printed copy is the one a cover photo belongs to
+  return hits.find((i) => i.format === 'physical') ?? hits[0]
+}
+
+/** What a recognised item adds to an existing entry: its empty fields, the creators if none, own cover photo if none. */
+export function completionPatch(old: Item, d: ItemDraft): Partial<Item> {
+  const patch: Partial<Item> = {}
+  for (const k of FILLABLE) {
+    if (k === 'needsCheck' || k === 'room') continue
+    const v = (d as Record<string, unknown>)[k]
+    if ((old[k] === undefined || old[k] === '') && v !== undefined && v !== '') (patch as Record<string, unknown>)[k] = v
+  }
+  if (!old.creators.length && d.creators?.length) patch.creators = d.creators
+  if (!old.coverData && d.coverData) patch.coverData = d.coverData
+  return patch
+}

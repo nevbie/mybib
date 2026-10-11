@@ -234,3 +234,36 @@ class DuplicateTest {
         assertEquals("T", s.items.value[0].publisher)
     }
 }
+
+class CoverMatchTest {
+    private val items = listOf(
+        item("id" to "a", "title" to "100 Kinder", "creators" to listOf("Christoph Drösser"), "room" to "Wohnzimmer", "rating" to 4),
+        item("id" to "b", "title" to "Sterne", "format" to "ebook"),
+        item("id" to "c", "title" to "Sterne", "coverData" to "data:image/jpeg;base64,old"),
+    )
+
+    @Test fun findsExistingEntry() {
+        assertEquals("a", findMatch(items, "100 Kinder", kind = "book")?.id)
+        assertNull(findMatch(items, "100 Kinder", creators = listOf("Nora Coenenberg"), kind = "book"))
+        assertEquals("c", findMatch(items, "Sterne", kind = "book")?.id)
+        assertNull(findMatch(items, "Freundschaft", kind = "book"))
+    }
+
+    @Test fun fillsOnlyWhatIsMissing() {
+        val p = completionPatch(items[0], draftOf("title" to "100 Kinder", "creators" to listOf("X"), "publisher" to "Gabriel", "coverData" to "data:image/jpeg;base64,new", "room" to "Küche"))
+        assertEquals(setOf("publisher", "coverData"), p.keys)
+        assertTrue(completionPatch(items[2], draftOf("title" to "Sterne", "coverData" to "data:image/jpeg;base64,new")).isEmpty())
+    }
+
+    @Test fun readsBox() {
+        val r = Recognized.fromJson(kotlinx.serialization.json.buildJsonObject {
+            put("kind", kotlinx.serialization.json.JsonPrimitive("book"))
+            put("title", kotlinx.serialization.json.JsonPrimitive("Sterne"))
+            put("box", kotlinx.serialization.json.buildJsonObject {
+                put("x0", kotlinx.serialization.json.JsonPrimitive(10)); put("y0", kotlinx.serialization.json.JsonPrimitive(20))
+                put("x1", kotlinx.serialization.json.JsonPrimitive(500)); put("y1", kotlinx.serialization.json.JsonPrimitive(600.5))
+            })
+        })
+        assertEquals(listOf(10.0, 20.0, 500.0, 600.5), r.box)
+    }
+}

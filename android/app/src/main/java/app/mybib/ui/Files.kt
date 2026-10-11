@@ -80,6 +80,37 @@ fun dataUrl(jpeg: ByteArray) = "data:image/jpeg;base64,${Base64.getEncoder().enc
 /** Small cover thumbnail kept with the item (≈ 20–40 KB), as data URL like the web app. */
 fun coverDataUrl(ctx: Context, uri: Uri): String? = loadJpeg(ctx, uri, 480, 80)?.let(::dataUrl)
 
+/**
+ * Cut one cover out of a photo with several ([box] = x0, y0, x1, y1 in thousandths of width/height, as Claude
+ * reports it), with a small margin, as a cover thumbnail data URL. Null when the box is unusable.
+ */
+fun cropCover(jpeg: ByteArray, box: List<Double>): String? = try {
+    val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+    fun f(v: Double) = (v / 1000).coerceIn(0.0, 1.0)
+    val pad = 0.01
+    val x0 = (f(minOf(box[0], box[2])) - pad).coerceAtLeast(0.0)
+    val y0 = (f(minOf(box[1], box[3])) - pad).coerceAtLeast(0.0)
+    val x1 = (f(maxOf(box[0], box[2])) + pad).coerceAtMost(1.0)
+    val y1 = (f(maxOf(box[1], box[3])) + pad).coerceAtMost(1.0)
+    val l = (x0 * bmp.width).toInt()
+    val t = (y0 * bmp.height).toInt()
+    val w = ((x1 - x0) * bmp.width).toInt().coerceAtMost(bmp.width - l)
+    val h = ((y1 - y0) * bmp.height).toInt().coerceAtMost(bmp.height - t)
+    if (w < 20 || h < 20) {
+        null
+    } else {
+        val scale = minOf(1f, 480f / maxOf(w, h))
+        val m = Matrix().apply { postScale(scale, scale) }
+        val out = Bitmap.createBitmap(bmp, l, t, w, h, m, true)
+        ByteArrayOutputStream().use { s ->
+            out.compress(Bitmap.CompressFormat.JPEG, 80, s)
+            dataUrl(s.toByteArray())
+        }
+    }
+} catch (_: Exception) {
+    null
+}
+
 class PhotoPicker(val camera: () -> Unit, val gallery: () -> Unit)
 
 /** Camera (asks for the permission first) and gallery picker; [onPicked] gets the photo URIs. */
