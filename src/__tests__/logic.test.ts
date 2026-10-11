@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { classifyCode, isbn10to13, isValidEan13, isValidIsbn10 } from '../logic/isbn'
-import { applyFilters, completionPatch, duplicateGroups, EMPTY_FILTERS, findDuplicate, findMatch, groupKey, mergeGroup, fold, mergeItems, normalizeItem, parseImport, sortItems, summarizePlaces, titleKey, toCSV, toExport } from '../logic/items'
+import { applyFilters, completionPatch, differingFields, duplicateGroups, mergeWithChoices, similarGroups, EMPTY_FILTERS, findDuplicate, findMatch, groupKey, mergeGroup, fold, mergeItems, normalizeItem, parseImport, sortItems, summarizePlaces, titleKey, toCSV, toExport } from '../logic/items'
 import { matchScore } from '../logic/lookup'
 import { toDraft } from '../logic/recognized'
 
@@ -197,5 +197,22 @@ describe('cover photos for existing entries', () => {
     const p = completionPatch(items[0], { title: '100 Kinder', creators: ['X'], publisher: 'Gabriel', coverData: 'data:image/jpeg;base64,new', room: 'Küche' })
     expect(p).toEqual({ publisher: 'Gabriel', coverData: 'data:image/jpeg;base64,new' })
     expect(completionPatch(items[2], { title: 'Sterne', coverData: 'data:image/jpeg;base64,new' })).toEqual({})
+  })
+})
+
+describe('merging by hand', () => {
+  const mk = (d: Record<string, unknown>) => normalizeItem({ title: 'x', ...d })
+  const a = mk({ id: 'a', title: 'Western Circus', volume: '22', creators: ['Morris', 'Goscinny'], coverData: 'data:image/jpeg;base64,A', addedAt: '2026-01-01' })
+  const b = mk({ id: 'b', title: 'Western Circus', volume: '62', creators: ['Morris', 'René Goscinny'], room: 'Wohnzimmer', coverData: 'data:image/jpeg;base64,B', rating: 3, addedAt: '2026-01-02' })
+  it('lists the differing fields and finds similar entries', () => {
+    expect(differingFields([a, b])).toEqual(['cover', 'creators', 'volume', 'room', 'rating'])
+    expect(similarGroups([a, b, mk({ id: 'c', title: 'Other' })]).map((g) => g.map((i) => i.id))).toEqual([['a', 'b']])
+    expect(similarGroups([a, b], [], new Set(['a']))).toEqual([])
+  })
+  it('takes the chosen values', () => {
+    const { keep, remove } = mergeWithChoices([a, b], { cover: 'a', volume: 'b', creators: 'a' })
+    expect(keep.id).toBe('b')
+    expect(remove).toEqual(['a'])
+    expect(keep).toMatchObject({ coverData: 'data:image/jpeg;base64,A', volume: '62', creators: ['Morris', 'Goscinny'], room: 'Wohnzimmer', rating: 3 })
   })
 })

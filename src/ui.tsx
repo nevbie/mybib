@@ -14,6 +14,7 @@ export type Overlay =
   | { type: 'tidy' }
   | { type: 'covers'; ids?: string[] }
   | { type: 'rotate'; ids?: string[] }
+  | { type: 'merge'; ids: string[] }
   | { type: 'bulkEdit'; ids: string[] }
   | { type: 'photo'; mode: 'shelf' | 'cover' }
   | { type: 'search'; kind: Kind; title: string; creator: string; resolve(c: Candidate | null): void }

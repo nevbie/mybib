@@ -472,3 +472,60 @@ export function completionPatch(old: Item, d: ItemDraft): Partial<Item> {
   if (!old.coverData && d.coverData) patch.coverData = d.coverData
   return patch
 }
+
+/** Fields offered for choice when merging by hand (cover = own photo and online cover together). */
+export const MERGE_FIELDS = ['cover', 'title', 'subtitle', 'creators', 'series', 'volume', 'publisher', 'year', 'isbn', 'language', 'pages', 'kind', 'format', 'category', 'room', 'description', 'status', 'rating'] as const
+export type MergeField = (typeof MERGE_FIELDS)[number]
+
+/** Value of a merge field, for comparing and showing; '' when empty. */
+export function mergeValue(i: Item, f: MergeField): string {
+  if (f === 'cover') return i.coverData ?? i.coverUrl ?? ''
+  if (f === 'creators') return i.creators.join(', ')
+  if (f === 'rating') return i.rating ? String(i.rating) : ''
+  if (f === 'status') return i.status === 'none' ? '' : i.status
+  const v = i[f]
+  return v === undefined || v === null ? '' : String(v)
+}
+
+/** Fields where the entries of a group differ (and at least one has a value) – the ones worth a choice. */
+export function differingFields(group: Item[]): MergeField[] {
+  return MERGE_FIELDS.filter((f) => {
+    const vals = new Set(group.map((i) => mergeValue(i, f)))
+    return vals.size > 1
+  })
+}
+
+/**
+ * Merge with the owner's choices: `choices` maps a field to the id of the entry whose value wins.
+ * Everything not chosen comes from `mergeGroup` (most complete entry, gaps filled, notes/tags/loans combined).
+ */
+export function mergeWithChoices(group: Item[], choices: Partial<Record<MergeField, string>>): { keep: Item; remove: string[] } {
+  const base = mergeGroup(group)
+  const keep: Item = { ...base.keep }
+  for (const [f, id] of Object.entries(choices) as [MergeField, string][]) {
+    const src = group.find((i) => i.id === id)
+    if (!src) continue
+    if (f === 'cover') {
+      keep.coverData = src.coverData
+      keep.coverUrl = src.coverUrl
+    } else (keep as unknown as Record<string, unknown>)[f] = (src as unknown as Record<string, unknown>)[f]
+  }
+  return { keep, remove: base.remove }
+}
+
+/**
+ * Similar entries: same title and kind, but author, volume or format differ (e.g. two volumes, or one
+ * entry with a typo in the author). Not duplicates for sure – shown separately so they can be merged by hand.
+ */
+export function similarGroups(items: Item[], ignored: string[] = [], exclude: Set<string> = new Set()): Item[][] {
+  const byTitle = new Map<string, Item[]>()
+  for (const i of items) {
+    if (exclude.has(i.id)) continue
+    const t = fold(i.title)
+    if (!t) continue
+    const k = `${t}\u0001${i.kind}`
+    byTitle.set(k, [...(byTitle.get(k) ?? []), i])
+  }
+  const skip = new Set(ignored)
+  return [...byTitle.values()].filter((g) => g.length > 1 && !skip.has(groupKey(g)))
+}

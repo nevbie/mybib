@@ -38,6 +38,9 @@ sealed class Screen {
     /** Turn own cover photos upright: [ids], or all entries with an own cover photo when null. */
     class Rotate(val ids: List<String>? = null) : Screen()
 
+    /** Merge [ids] into one entry, choosing per field whose value to keep. */
+    class Merge(val ids: List<String>) : Screen()
+
     class Bulk : Screen() {
         @Volatile var stop = false
 

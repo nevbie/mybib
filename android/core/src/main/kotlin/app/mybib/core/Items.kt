@@ -2,6 +2,7 @@ package app.mybib.core
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -414,4 +415,45 @@ fun completionPatch(old: Item, d: Draft): Draft {
     if (old.creators.isEmpty() && d["creators"].strings.isNotEmpty()) patch["creators"] = d["creators"]!!
     if (old.coverData == null && !d["coverData"].isBlankValue()) patch["coverData"] = d["coverData"]!!
     return patch
+}
+
+/** Fields offered for choice when merging by hand (cover = own photo and online cover together). */
+val mergeFields = listOf("cover", "title", "subtitle", "creators", "series", "volume", "publisher", "year", "isbn", "language", "pages", "kind", "format", "category", "room", "description", "status", "rating")
+
+/** Value of a merge field, for comparing and showing; "" when empty. */
+fun mergeValue(i: Item, f: String): String = when (f) {
+    "cover" -> i.coverData ?: i.coverUrl ?: ""
+    "creators" -> i.creators.joinToString(", ")
+    "rating" -> if (i.rating > 0) i.rating.toString() else ""
+    "status" -> if (i.status == "none") "" else i.status
+    else -> i.toJson()[f]?.let { (it as? JsonPrimitive)?.content } ?: ""
+}
+
+/** Fields where the entries of a group differ – the ones worth a choice. */
+fun differingFields(group: List<Item>): List<String> = mergeFields.filter { f -> group.map { mergeValue(it, f) }.toSet().size > 1 }
+
+/**
+ * Merge with the owner's choices: [choices] maps a field to the id of the entry whose value wins.
+ * Everything not chosen comes from [mergeGroup] (most complete entry, gaps filled, notes/tags/loans combined).
+ */
+fun mergeWithChoices(group: List<Item>, choices: Map<String, String>): GroupMerge {
+    val base = mergeGroup(group)
+    val patch = linkedMapOf<String, JsonElement>()
+    for ((f, id) in choices) {
+        val src = group.firstOrNull { it.id == id }?.toJson() ?: continue
+        val fields = if (f == "cover") listOf("coverData", "coverUrl") else listOf(f)
+        for (k in fields) patch[k] = src[k] ?: JsonNull
+    }
+    return GroupMerge(base.keep.copyWith(patch), base.remove)
+}
+
+/**
+ * Similar entries: same title and kind, but author, volume or format differ (e.g. two volumes, or one
+ * entry with a typo in the author). Not duplicates for sure – shown separately so they can be merged by hand.
+ */
+fun similarGroups(items: List<Item>, ignored: Collection<String> = emptyList(), exclude: Set<String> = emptySet()): List<List<Item>> {
+    val skip = ignored.toSet()
+    return items.filter { it.id !in exclude && fold(it.title).isNotEmpty() }
+        .groupBy { fold(it.title) + "\u0001" + it.kind }.values
+        .filter { it.size > 1 && groupKey(it) !in skip }
 }

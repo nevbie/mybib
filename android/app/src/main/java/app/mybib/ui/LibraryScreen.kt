@@ -54,7 +54,6 @@ import androidx.compose.ui.unit.sp
 import app.mybib.Screen
 import app.mybib.core.Filters
 import app.mybib.core.applyFilters
-import app.mybib.core.mergeGroup
 import app.mybib.core.formats
 import app.mybib.core.kinds
 import app.mybib.core.sortItems
@@ -80,13 +79,10 @@ fun LibraryScreen() {
     var bulkEdit by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // merge the selected entries into one (e.g. the same book entered twice, once without author)
-    fun merge() = scope.launch {
-        val m = mergeGroup(list.filter { it.id in selected })
-        if (!vm.dialogs.confirm(ui.t("sel.mergeConfirm", "n" to selected.size, "title" to m.keep.title))) return@launch
-        vm.store.applyMerges(listOf(m))
+    // merge the selected entries into one, choosing which cover, author … to keep
+    fun merge() {
+        vm.push(Screen.Merge(selected))
         vm.selection = null
-        vm.push(Screen.Detail(m.keep.id))
     }
     fun set(nf: Filters) {
         vm.filters = nf
