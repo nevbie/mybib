@@ -169,8 +169,10 @@ fun PhotoScreen(screen: Screen.Photo) {
                     val recognized = recognize(jpeg)
                     for (f in recognized) {
                         val box = f.box
-                        val cut = if (recognized.size > 1 && box != null) withContext(Dispatchers.Default) { cropCover(jpeg, box) } else null
-                        val draft = f.toDraft() + draftOf("coverData" to (cut ?: whole))
+                        // several covers: cut each one out; turned upright either way
+                        val cut = if (recognized.size > 1 && box != null) withContext(Dispatchers.Default) { cropCover(jpeg, box, f.rotation) } else null
+                        val cover = cut ?: withContext(Dispatchers.Default) { rotateDataUrl(whole, f.rotation) }
+                        val draft = f.toDraft() + draftOf("coverData" to cover)
                         found += PhotoRow(draft, f.confidence, f.remark, true, null, findMatchOf(vm.store.items.value, draft))
                     }
                 } catch (e: Exception) {

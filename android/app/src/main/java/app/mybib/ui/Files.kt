@@ -84,7 +84,7 @@ fun coverDataUrl(ctx: Context, uri: Uri): String? = loadJpeg(ctx, uri, 480, 80)?
  * Cut one cover out of a photo with several ([box] = x0, y0, x1, y1 in thousandths of width/height, as Claude
  * reports it), with a small margin, as a cover thumbnail data URL. Null when the box is unusable.
  */
-fun cropCover(jpeg: ByteArray, box: List<Double>): String? = try {
+fun cropCover(jpeg: ByteArray, box: List<Double>, rotation: Int = 0): String? = try {
     val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
     fun f(v: Double) = (v / 1000).coerceIn(0.0, 1.0)
     val pad = 0.01
@@ -100,7 +100,10 @@ fun cropCover(jpeg: ByteArray, box: List<Double>): String? = try {
         null
     } else {
         val scale = minOf(1f, 480f / maxOf(w, h))
-        val m = Matrix().apply { postScale(scale, scale) }
+        val m = Matrix().apply {
+            postScale(scale, scale)
+            postRotate(rotation.toFloat())
+        }
         val out = Bitmap.createBitmap(bmp, l, t, w, h, m, true)
         ByteArrayOutputStream().use { s ->
             out.compress(Bitmap.CompressFormat.JPEG, 80, s)
@@ -110,6 +113,25 @@ fun cropCover(jpeg: ByteArray, box: List<Double>): String? = try {
 } catch (_: Exception) {
     null
 }
+
+/** Turn a cover photo (data URL) clockwise by 90/180/270 degrees. */
+fun rotateDataUrl(dataUrl: String, rotation: Int): String {
+    if (rotation % 360 == 0) return dataUrl
+    return try {
+        val bytes = Base64.getDecoder().decode(dataUrl.substring(dataUrl.indexOf(',') + 1))
+        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return dataUrl
+        val out = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(rotation.toFloat()) }, true)
+        ByteArrayOutputStream().use { s ->
+            out.compress(Bitmap.CompressFormat.JPEG, 85, s)
+            dataUrl(s.toByteArray())
+        }
+    } catch (_: Exception) {
+        dataUrl
+    }
+}
+
+/** The JPEG bytes of a data URL (to send own covers to Claude). */
+fun dataUrlBytes(dataUrl: String): ByteArray = Base64.getDecoder().decode(dataUrl.substring(dataUrl.indexOf(',') + 1))
 
 class PhotoPicker(val camera: () -> Unit, val gallery: () -> Unit)
 

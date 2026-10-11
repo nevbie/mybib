@@ -35,6 +35,9 @@ sealed class Screen {
     /** Add cover photos to existing entries: [ids], or all entries without a cover when null. */
     class Covers(val ids: List<String>? = null) : Screen()
 
+    /** Turn own cover photos upright: [ids], or all entries with an own cover photo when null. */
+    class Rotate(val ids: List<String>? = null) : Screen()
+
     class Bulk : Screen() {
         @Volatile var stop = false
 

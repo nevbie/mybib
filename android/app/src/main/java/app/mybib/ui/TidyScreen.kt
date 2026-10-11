@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 private val scopes = listOf("all", "owned", "wish", "lent", "recommend", "check")
 
 /** Tidy up: find and merge duplicates, edit or delete many entries chosen by filter. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TidyScreen(screen: Screen.Tidy) {
     val ui = LocalUi.current
@@ -84,7 +85,10 @@ fun TidyScreen(screen: Screen.Tidy) {
                     Spacer(Modifier.height(10.dp))
                     Text(ui.t("covers.title"), style = MaterialTheme.typography.titleMedium)
                     Small(ui.t("covers.card", "n" to noCover))
-                    OutlinedButton(onClick = { vm.push(Screen.Covers()) }) { Text("📷 ${ui.t("covers.title")}") }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { vm.push(Screen.Covers()) }) { Text("📷 ${ui.t("covers.title")}") }
+                        OutlinedButton(onClick = { vm.push(Screen.Rotate()) }) { Text("⟳ ${ui.t("rotate.title")}") }
+                    }
                 }
             }
             item { BulkByFilter(screen) }
