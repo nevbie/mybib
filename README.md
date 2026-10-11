@@ -30,6 +30,10 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
 - **Own cover photo**: tap the cover on an entry → take a photo or pick one from the gallery.
 - **Bulk edit**: *Select* in the library (or *All* of the current filter) → set room, status, rating, kind,
   format, wishlist, recommendation, add/remove a tag, clear "to check", or delete – for many entries at once.
+- **Tidy up** (Places → 🧹): finds probable duplicates (same ISBN, or same title, author, volume, kind and
+  format) – merge a group into its most complete entry (empty fields filled, best rating, notes, tags and loans
+  combined), delete just the copies you tick, or mark "not duplicates"; plus edit or delete everything matching
+  a filter (kind, wishlist/lent/to check, status, room, category, search) in one go.
 - **Places**: rooms (default Küche, Wohnzimmer, Kleines Zimmer) with counts; rename a room, or merge it
   into another by giving it that room's name; stats.
 - **Fill in missing info** for all books at once: cover, publisher, year, ISBN and blurb from Google Books
@@ -38,12 +42,16 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
 - **Duplicate warnings** when scanning, recognising or typing.
 - **Data stays on the phone** (IndexedDB). Export/import JSON backups, export CSV for spreadsheets.
 
-## Android app (Flutter)
+## Native apps (Android + iPhone)
 
-The folder [`app/`](app/README.md) holds the same app as a native Android app (Flutter), with the same data
-format – export a backup here, import it there. GitHub Actions build a test APK for every pull request and a
-signed **APK + AAB** release for every merge to `main` (needs the `KEYSTORE_BASE64` / `KEYSTORE_PASSWORD`
-secrets, see `app/README.md`).
+The same app also exists natively, with the same data format – export a backup in one, import it in another:
+
+| Folder | Platform | Builds |
+| --- | --- | --- |
+| [`android/`](android/README.md) | Android, Kotlin + Jetpack Compose | test APK on every push / pull request; signed **APK + AAB** release on every merge to `main` (needs the `KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` secrets) |
+| [`ios/`](ios/README.md) | iPhone, Swift + SwiftUI | simulator build + tests on every push / pull request; **TestFlight** upload by hand (*Actions → iOS release build*, needs the Apple secrets) |
+
+Both apps read their German and English texts from [`shared/strings.json`](shared/strings.json).
 
 ## Development
 

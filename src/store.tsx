@@ -11,6 +11,8 @@ interface StoreValue {
   addItems(drafts: ItemDraft[]): Promise<Item[]>
   updateItem(id: string, patch: Partial<Item>): void
   removeItems(ids: string[]): void
+  /** Replace each kept entry by its merged version and delete the rest (duplicate merging). */
+  applyMerges(merges: { keep: Item; remove: string[] }[]): void
   importItems(items: Item[], updateOnly?: boolean): Promise<{ added: number; updated: number; skipped: number }>
   /** Rename a category on all items ('' removes it). */
   moveCategory(from: string, to: string): void
@@ -77,6 +79,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     db.deleteItems(ids).catch((e) => alert(String(e)))
   }, [])
 
+  const applyMerges = useCallback(
+    (merges: { keep: Item; remove: string[] }[]) => {
+      const now = new Date().toISOString()
+      const kept = new Map(merges.map((m) => [m.keep.id, normalizeItem({ ...m.keep, updatedAt: now })]))
+      const gone = new Set(merges.flatMap((m) => m.remove))
+      setItems(itemsRef.current.filter((i) => !gone.has(i.id)).map((i) => kept.get(i.id) ?? i))
+      persist([...kept.values()])
+      db.deleteItems([...gone]).catch((e) => alert(String(e)))
+    },
+    [persist],
+  )
+
   const importItems = useCallback(async (incoming: Item[], updateOnly = false) => {
     const r = mergeItems(itemsRef.current, incoming, updateOnly)
     setItems(r.items)
@@ -133,7 +147,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
 
-  const value: StoreValue = { ready, items, byId, settings, addItems, updateItem, removeItems, importItems, replaceAll, updateItems, moveRoom, moveCategory, updateSettings }
+  const value: StoreValue = { ready, items, byId, settings, addItems, updateItem, removeItems, applyMerges, importItems, replaceAll, updateItems, moveRoom, moveCategory, updateSettings }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

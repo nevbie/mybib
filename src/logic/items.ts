@@ -356,3 +356,72 @@ export function knownPeople(items: Item[]): string[] {
   const loans = items.flatMap((i) => i.loans).sort((a, b) => b.since.localeCompare(a.since))
   return [...new Set(loans.map((l) => l.to))]
 }
+
+/** Stable key of a duplicate group, so "not duplicates" can be remembered (changes when the group changes). */
+export function groupKey(items: Item[]): string {
+  return items.map((i) => i.id).sort().join(',')
+}
+
+/**
+ * Groups of probable duplicates – same ISBN, or same title + first creator + volume + kind + format
+ * (the rules of `findDuplicate`). Groups marked "not duplicates" (`ignored` keys) are left out.
+ */
+export function duplicateGroups(items: Item[], ignored: string[] = []): Item[][] {
+  const parent = items.map((_, n) => n)
+  const root = (n: number): number => (parent[n] === n ? n : (parent[n] = root(parent[n])))
+  const join = (a: number, b: number) => {
+    parent[root(a)] = root(b)
+  }
+  const seen = new Map<string, number>()
+  items.forEach((i, n) => {
+    const keys: string[] = []
+    if (i.isbn) keys.push(`isbn:${i.isbn}`)
+    const t = fold(i.title)
+    if (t) keys.push(['t', t, i.creators[0] ? fold(i.creators[0]) : '', i.volume ? fold(i.volume) : '', i.kind, i.format].join('\u0001'))
+    for (const k of keys) {
+      const m = seen.get(k)
+      if (m === undefined) seen.set(k, n)
+      else join(n, m)
+    }
+  })
+  const groups = new Map<number, Item[]>()
+  items.forEach((i, n) => {
+    const r = root(n)
+    groups.set(r, [...(groups.get(r) ?? []), i])
+  })
+  const skip = new Set(ignored)
+  return [...groups.values()].filter((g) => g.length > 1 && !skip.has(groupKey(g)))
+}
+
+const STATUS_RANK = { none: 0, want: 1, active: 2, done: 3 } as const
+
+/** How much is filled in – the most complete entry of a group is kept when merging. */
+function completeness(i: Item): number {
+  const vals = [i.subtitle, i.publisher, i.year, i.isbn, i.language, i.series, i.volume, i.pages, i.description, i.coverUrl, i.coverData, i.category, i.room, i.notes]
+  return vals.filter((v) => v !== undefined && v !== '').length + i.creators.length + i.tags.length + i.loans.length + (i.rating ? 1 : 0)
+}
+
+/**
+ * Merge a duplicate group into one entry: keeps the most complete (on a tie the oldest) entry, fills its empty
+ * fields from the others, and combines what is personal – best rating, furthest status, recommendation,
+ * owned, notes, tags, loans. Returns the merged entry and the ids to delete.
+ */
+export function mergeGroup(group: Item[]): { keep: Item; remove: string[] } {
+  const sorted = [...group].sort((a, b) => completeness(b) - completeness(a) || a.addedAt.localeCompare(b.addedAt))
+  let keep: Item = { ...sorted[0] }
+  for (const other of sorted.slice(1)) keep = fillEmpty(keep, other) ?? keep
+  const all = sorted
+  keep.coverData ??= all.find((i) => i.coverData)?.coverData
+  if (!keep.creators.length) keep.creators = all.find((i) => i.creators.length)?.creators ?? []
+  keep.rating = Math.max(...all.map((i) => i.rating))
+  keep.status = all.map((i) => i.status).reduce((a, b) => (STATUS_RANK[b] > STATUS_RANK[a] ? b : a))
+  keep.recommend = all.some((i) => i.recommend)
+  keep.owned = all.some((i) => i.owned)
+  keep.tags = [...new Set(all.flatMap((i) => i.tags))]
+  const notes = [...new Set(all.map((i) => i.notes?.trim()).filter((n): n is string => !!n))]
+  keep.notes = notes.length ? notes.join('\n\n') : undefined
+  const loans = new Map(all.flatMap((i) => i.loans).map((l) => [`${l.to}\u0001${l.since}`, l]))
+  keep.loans = [...loans.values()].sort((a, b) => a.since.localeCompare(b.since))
+  keep.addedAt = all.map((i) => i.addedAt).sort()[0]
+  return { keep, remove: sorted.slice(1).map((i) => i.id) }
+}

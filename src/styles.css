@@ -936,3 +936,28 @@ summary {
   flex-wrap: wrap;
   overflow: visible;
 }
+
+/* Tidy up */
+.tidy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.dup-group .list {
+  margin-bottom: 10px;
+}
+.dup-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 6px;
+}
+.dup-row > .row {
+  padding: 0 10px;
+}

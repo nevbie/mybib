@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "mybib braucht die Kamera, um Barcodes zu scannen und Cover oder Regale zu fotografieren.";
+"NSPhotoLibraryUsageDescription" = "mybib liest Fotos aus deiner Mediathek, um Cover und Regale zu erkennen.";
