@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { classifyCode, isbn10to13, isValidEan13, isValidIsbn10 } from '../logic/isbn'
-import { applyFilters, duplicateGroups, EMPTY_FILTERS, findDuplicate, groupKey, mergeGroup, fold, mergeItems, normalizeItem, parseImport, sortItems, summarizePlaces, titleKey, toCSV, toExport } from '../logic/items'
+import { applyFilters, completionPatch, duplicateGroups, EMPTY_FILTERS, findDuplicate, findMatch, groupKey, mergeGroup, fold, mergeItems, normalizeItem, parseImport, sortItems, summarizePlaces, titleKey, toCSV, toExport } from '../logic/items'
 import { matchScore } from '../logic/lookup'
 import { toDraft } from '../logic/recognized'
 
@@ -177,5 +177,25 @@ describe('duplicates', () => {
     expect(remove).toEqual(['a'])
     expect(keep).toMatchObject({ publisher: 'Thienemann', rating: 5, status: 'done', notes: 'Geschenk', owned: true, addedAt: '2026-01-02', tags: ['Kinder'] })
     expect(keep.loans).toHaveLength(1)
+  })
+})
+
+describe('cover photos for existing entries', () => {
+  const mk = (d: Record<string, unknown>) => normalizeItem({ title: 'x', ...d })
+  const items = [
+    mk({ id: 'a', title: '100 Kinder', creators: ['Christoph Drösser'], room: 'Wohnzimmer', rating: 4 }),
+    mk({ id: 'b', title: 'Sterne', kind: 'book', format: 'ebook' }),
+    mk({ id: 'c', title: 'Sterne', kind: 'book', coverData: 'data:image/jpeg;base64,old' }),
+  ]
+  it('finds the existing entry even when the author is missing on one side', () => {
+    expect(findMatch(items, { title: '100 Kinder', creators: [], kind: 'book' })?.id).toBe('a')
+    expect(findMatch(items, { title: '100 Kinder', creators: ['Nora Coenenberg'], kind: 'book' })).toBeUndefined()
+    expect(findMatch(items, { title: 'Sterne', kind: 'book' })?.id).toBe('c')
+    expect(findMatch(items, { title: 'Freundschaft', kind: 'book' })).toBeUndefined()
+  })
+  it('only fills what is missing', () => {
+    const p = completionPatch(items[0], { title: '100 Kinder', creators: ['X'], publisher: 'Gabriel', coverData: 'data:image/jpeg;base64,new', room: 'Küche' })
+    expect(p).toEqual({ publisher: 'Gabriel', coverData: 'data:image/jpeg;base64,new' })
+    expect(completionPatch(items[2], { title: 'Sterne', coverData: 'data:image/jpeg;base64,new' })).toEqual({})
   })
 })

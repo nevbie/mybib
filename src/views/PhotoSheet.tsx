@@ -4,8 +4,8 @@ import { Sheet } from '../components/Sheet'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { RecognizeError, toDraft } from '../logic/recognized'
-import { coverFromPhoto, dataUrlBase64, photoForAI } from '../logic/image'
-import { findDuplicate, newId } from '../logic/items'
+import { coverFromPhoto, cropCover, dataUrlBase64, photoForAI } from '../logic/image'
+import { completionPatch, findDuplicate, findMatch, newId } from '../logic/items'
 import { enrichPatch, matchScore, searchOnline } from '../logic/lookup'
 import { useStore } from '../store'
 import { KINDS, type ItemDraft, type Kind } from '../types'
@@ -18,6 +18,10 @@ interface Row {
   remark: string
   selected: boolean
   dupTitle?: string
+  /** existing entry this cover probably belongs to (cover mode) */
+  target?: { id: string; title: string }
+  /** complete `target` instead of adding a new entry */
+  update?: boolean
 }
 
 /**
@@ -29,7 +33,7 @@ interface Row {
 export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
   const { t } = useLang()
   const ui = useUI()
-  const { items, settings, addItems, updateSettings } = useStore()
+  const { items, byId, settings, addItems, updateItem, updateSettings } = useStore()
   const [hint, setHint] = useState('')
   const [rows, setRows] = useState<Row[]>([])
   const [status, setStatus] = useState('')
@@ -47,8 +51,8 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
     return String(e)
   }
 
-  const recognize = async (file: File) => {
-    const dataUrl = await photoForAI(file)
+  const recognize = async (file: File, dataUrl?: string) => {
+    dataUrl ??= await photoForAI(file)
     // the Anthropic SDK is only downloaded when photo recognition is actually used
     const { recognizePhoto } = await import('../logic/ai')
     return recognizePhoto({ apiKey: settings.claudeKey, model: settings.claudeModel, imageBase64: dataUrlBase64(dataUrl), mediaType: 'image/jpeg', hint, signal: abortRef.current?.signal })
@@ -85,24 +89,28 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
     }
   }
 
-  /** Each photo becomes one entry with the photo as its cover; with a key Claude reads the title. */
+  /**
+   * Cover photos: with a key Claude reads every cover on a photo (one or several) and each is cut out as its
+   * own cover; without a key one photo = one entry. Recognised items that are already in the catalogue are
+   * offered as "complete the existing entry" (cover photo + empty fields) instead of a new one.
+   */
   const onCovers = async (list: File[]) => {
     setBusy(true)
     abortRef.current = new AbortController()
     try {
       for (let i = 0; i < list.length; i++) {
         setStatus(t('ai.readingCovers', { i: i + 1, n: list.length }))
-        const coverData = await coverFromPhoto(list[i])
-        let draft: Row['draft'] = { title: '', kind: 'book', creators: [], coverData, source: 'manual' }
-        let confidence: Row['confidence'] = 'high'
-        let remark = ''
+        const whole = await coverFromPhoto(list[i])
+        const found: Row[] = []
         if (hasKey) {
           try {
-            const [first] = await recognize(list[i])
-            if (first) {
-              draft = { ...(toDraft(first) as Row['draft']), coverData, source: 'ai' }
-              confidence = first.confidence
-              remark = first.remark
+            const big = await photoForAI(list[i])
+            const recognized = await recognize(list[i], big)
+            for (const f of recognized) {
+              const cut = recognized.length > 1 && f.box ? await cropCover(big, f.box) : null
+              const draft = { ...(toDraft(f) as Row['draft']), coverData: cut ?? whole }
+              const match = findMatch(items, draft)
+              found.push({ key: newId(), draft, confidence: f.confidence, remark: f.remark, selected: true, target: match && { id: match.id, title: match.title }, update: !!match })
             }
           } catch (e) {
             if ((e as Error).name === 'AbortError' || abortRef.current.signal.aborted) break
@@ -110,10 +118,15 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
             if (e instanceof RecognizeError && e.code === 'auth') break
           }
         }
-        setRows((r) => {
-          const dup = draft.title ? (findDuplicate(items, draft) ?? r.map((x) => x.draft).find((x) => x.title === draft.title && x.volume === draft.volume)) : undefined
-          return [...r, { key: newId(), draft, confidence, remark, selected: !dup, dupTitle: dup?.title }]
-        })
+        if (!found.length) found.push({ key: newId(), draft: { title: '', kind: 'book', creators: [], coverData: whole, source: 'manual' }, confidence: 'high', remark: '', selected: true })
+        setRows((r) => [
+          ...r,
+          ...found.map((row) => {
+            // the same book twice in this batch (e.g. photographed twice)
+            const twice = row.draft.title && r.find((x) => x.draft.title === row.draft.title && x.draft.volume === row.draft.volume)
+            return twice ? { ...row, selected: false, dupTitle: twice.draft.title } : row
+          }),
+        ])
       }
     } finally {
       setStatus('')
@@ -128,9 +141,11 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
   const addAll = async () => {
     setBusy(true)
     const drafts: ItemDraft[] = []
+    let completed = 0
     try {
       for (let i = 0; i < selected.length; i++) {
-        let d: ItemDraft = { ...selected[i].draft, room: room || undefined }
+        const row = selected[i]
+        let d: ItemDraft = { ...row.draft, room: room || undefined }
         if (enrich && (d.kind === 'book' || d.kind === 'cd')) {
           setStatus(t('ai.enrichingN', { i: i + 1, n: selected.length }))
           const found = await searchOnline(d.kind!, d.title, d.creators?.[0] ?? '', settings.googleBooksKey).catch(() => [])
@@ -140,11 +155,17 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
           // MusicBrainz asks for max. 1 request per second
           if (d.kind === 'cd') await new Promise((r) => setTimeout(r, 1000))
         }
-        drafts.push(d)
+        const old = row.update && row.target ? byId.get(row.target.id) : undefined
+        if (old) {
+          // complete the existing entry; its room and personal data stay as they are
+          const patch = completionPatch(old, d)
+          if (Object.keys(patch).length) updateItem(old.id, patch)
+          completed++
+        } else drafts.push(d)
       }
-      await addItems(drafts)
+      if (drafts.length) await addItems(drafts)
       updateSettings({ lastRoom: room })
-      alert(t('ai.added', { n: drafts.length }))
+      alert(completed ? t('ai.addedCompleted', { n: drafts.length, m: completed }) : t('ai.added', { n: drafts.length }))
       ui.close()
     } finally {
       setBusy(false)
@@ -162,7 +183,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
       footer={
         rows.length > 0 && (
           <button className="btn primary wide" onClick={addAll} disabled={busy || !selected.length}>
-            {t('ai.addN', { n: selected.length })}
+            {selected.some((r) => r.update && r.target) ? t('ai.applyN', { n: selected.length }) : t('ai.addN', { n: selected.length })}
           </button>
         )
       }
@@ -231,8 +252,14 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
                     </select>
                     {[r.draft.series, r.draft.volume].filter(Boolean).join(' ')}
                     {r.confidence !== 'high' && <span className="badge badge-check">{t(`ai.conf.${r.confidence}`)}</span>}
-                    {r.dupTitle && <span className="badge badge-wish">{t('ai.dup')}</span>}
+                    {r.dupTitle && !r.target && <span className="badge badge-wish">{t('ai.dup')}</span>}
                   </div>
+                  {r.target && (
+                    <label className="toggle small">
+                      <input type="checkbox" checked={!!r.update} onChange={(e) => upd(r.key, { update: e.target.checked })} />
+                      {t('ai.completeExisting', { title: r.target.title })}
+                    </label>
+                  )}
                   {r.remark && <span className="muted small">{r.remark}</span>}
                 </div>
               </div>

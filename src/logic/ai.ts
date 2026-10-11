@@ -17,7 +17,7 @@ const SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['kind', 'title', 'creators', 'series', 'volume', 'publisher', 'language', 'confidence', 'remark'],
+        required: ['kind', 'title', 'creators', 'series', 'volume', 'publisher', 'language', 'confidence', 'remark', 'box'],
         properties: {
           kind: { type: 'string', enum: [...KINDS] },
           title: { type: 'string' },
@@ -28,6 +28,12 @@ const SCHEMA = {
           language: { type: 'string' },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
           remark: { type: 'string' },
+          box: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['x0', 'y0', 'x1', 'y1'],
+            properties: { x0: { type: 'number' }, y0: { type: 'number' }, x1: { type: 'number' }, y1: { type: 'number' } },
+          },
         },
       },
     },
@@ -45,6 +51,7 @@ List every item whose spine or cover you can see, from left to right and top to 
 - language: ISO 639-1 code of the item's language ("de", "en", "zh", "tr", "la", "fr" …), "" if unclear.
 - confidence: "high" if clearly readable, "medium" if partly guessed, "low" if mostly guessed.
 - remark: short note on what was unclear, else "".
+- box: where the item's front cover (or, for a spine, the spine) is in the photo: left x0, top y0, right x1, bottom y1, in thousandths of the image width and height (0–1000, origin top left).
 
 Skip things that are not catalogue items (folders, loose papers, boxes of toys, stacks of newspapers, notebooks without a title). Do not invent items you cannot see. If a spine is too blurry to read at all, skip it rather than guessing wildly.`
 
