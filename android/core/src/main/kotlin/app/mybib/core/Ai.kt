@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -31,6 +32,8 @@ class Recognized(
     val remark: String = "",
     /** where the cover/spine is in the photo: x0, y0, x1, y1 in thousandths of width/height – used to cut out covers */
     val box: List<Double>? = null,
+    /** degrees to turn the cut-out clockwise so it reads upright */
+    val rotation: Int = 0,
 ) {
     /** Item draft for normalizeItem / the form. */
     fun toDraft(): Draft = linkedMapOf<String, Any?>().apply {
@@ -58,6 +61,7 @@ class Recognized(
             remark = o["remark"].string ?: "",
             box = o["box"].obj?.let { b -> listOf("x0", "y0", "x1", "y1").map { (b[it] as? JsonPrimitive)?.doubleOrNull } }
                 ?.takeIf { l -> l.all { it != null } }?.map { it!! },
+            rotation = (o["rotation"] as? JsonPrimitive)?.intOrNull?.takeIf { it in rotations } ?: 0,
         )
     }
 }
@@ -67,6 +71,32 @@ class RecognizeError(
     val code: String,
     message: String,
 ) : Exception(message)
+
+private val rotations = listOf(0, 90, 180, 270)
+
+private val rotationSchema = buildJsonObject {
+    put("type", "object")
+    put("additionalProperties", false)
+    putJsonArray("required") { add("covers") }
+    putJsonObject("properties") {
+        putJsonObject("covers") {
+            put("type", "array")
+            putJsonObject("items") {
+                put("type", "object")
+                put("additionalProperties", false)
+                putJsonArray("required") { add("index"); add("rotation") }
+                putJsonObject("properties") {
+                    putJsonObject("index") { put("type", "integer") }
+                    putJsonObject("rotation") { put("type", "integer"); putJsonArray("enum") { rotations.forEach { add(it) } } }
+                }
+            }
+        }
+    }
+}
+
+private const val ROTATION_PROMPT = "Each image above is a photo of one front cover (book, comic, board game, DVD or CD), numbered from 0. " +
+    "Some were taken sideways or upside down. For every cover give index and rotation: how many degrees the image must be turned " +
+    "clockwise so its title and picture are upright (0 if it already is; 90, 180 or 270 otherwise). Judge by the title text and the picture, not by the shape of the image."
 
 private val schema = buildJsonObject {
     put("type", "object")
@@ -78,7 +108,7 @@ private val schema = buildJsonObject {
             putJsonObject("items") {
                 put("type", "object")
                 put("additionalProperties", false)
-                putJsonArray("required") { listOf("kind", "title", "creators", "series", "volume", "publisher", "language", "confidence", "remark", "box").forEach { add(it) } }
+                putJsonArray("required") { listOf("kind", "title", "creators", "series", "volume", "publisher", "language", "confidence", "remark", "box", "rotation").forEach { add(it) } }
                 putJsonObject("properties") {
                     putJsonObject("kind") { put("type", "string"); putJsonArray("enum") { kinds.forEach { add(it) } } }
                     putJsonObject("title") { put("type", "string") }
@@ -95,6 +125,7 @@ private val schema = buildJsonObject {
                         putJsonArray("required") { listOf("x0", "y0", "x1", "y1").forEach { add(it) } }
                         putJsonObject("properties") { listOf("x0", "y0", "x1", "y1").forEach { putJsonObject(it) { put("type", "number") } } }
                     }
+                    putJsonObject("rotation") { put("type", "integer"); putJsonArray("enum") { rotations.forEach { add(it) } } }
                 }
             }
         }
@@ -113,6 +144,7 @@ List every item whose spine or cover you can see, from left to right and top to 
 - confidence: "high" if clearly readable, "medium" if partly guessed, "low" if mostly guessed.
 - remark: short note on what was unclear, else "".
 - box: where the item's front cover (or, for a spine, the spine) is in the photo: left x0, top y0, right x1, bottom y1, in thousandths of the image width and height (0–1000, origin top left).
+- rotation: how many degrees that box must be turned clockwise so the cover's title reads upright: 0, 90, 180 or 270.
 
 Skip things that are not catalogue items (folders, loose papers, boxes of toys, stacks of newspapers, notebooks without a title). Do not invent items you cannot see. If a spine is too blurry to read at all, skip it rather than guessing wildly."""
 
@@ -150,8 +182,9 @@ class Claude(private val http: Http = UrlConnectionHttp()) {
         }
     }
 
-    suspend fun recognizePhoto(apiKey: String, model: String, jpeg: ByteArray, hint: String = ""): List<Recognized> {
-        val body = requestBody(model, jpeg, hint).toString().encodeToByteArray()
+    /** Send one request, return the text of the structured answer (or throw a [RecognizeError]). */
+    private suspend fun ask(apiKey: String, body: JsonObject, tooMany: String): String {
+        val bytes = body.toString().encodeToByteArray()
         val res = withContext(Dispatchers.IO) {
             try {
                 http.send(HttpRequest(
@@ -163,7 +196,7 @@ class Claude(private val http: Http = UrlConnectionHttp()) {
                         "anthropic-beta" to "server-side-fallback-2026-07-01",
                         "content-type" to "application/json",
                     ),
-                    body,
+                    bytes,
                     timeoutMs = 5 * 60_000,
                 ))
             } catch (e: CancellationException) {
@@ -178,12 +211,72 @@ class Claude(private val http: Http = UrlConnectionHttp()) {
         if (res.status != 200) throw RecognizeError("other", "HTTP ${res.status}")
         val msg = try { parseJson(text).obj } catch (_: Exception) { null } ?: throw RecognizeError("parse", "unexpected answer")
         if (msg["stop_reason"].string == "refusal") throw RecognizeError("refusal", msg["stop_details"].obj?.get("explanation").string ?: "refused")
-        val out = msg["content"].arr?.mapNotNull { b -> b.obj?.takeIf { it["type"].string == "text" }?.get("text").string }?.joinToString("") ?: ""
+        if (msg["stop_reason"].string == "max_tokens") throw RecognizeError("parse", tooMany)
+        return msg["content"].arr?.mapNotNull { b -> b.obj?.takeIf { it["type"].string == "text" }?.get("text").string }?.joinToString("") ?: ""
+    }
+
+    suspend fun recognizePhoto(apiKey: String, model: String, jpeg: ByteArray, hint: String = ""): List<Recognized> {
+        val out = ask(apiKey, requestBody(model, jpeg, hint), "too many items in one photo – try a closer photo")
         try {
             val items = parseJson(out).obj!!["items"].arr!!
             return items.map { Recognized.fromJson(it.obj!!) }.filter { it.title.isNotEmpty() }
         } catch (_: Exception) {
-            throw RecognizeError("parse", if (msg["stop_reason"].string == "max_tokens") "too many items in one photo – try a closer photo" else "unexpected answer")
+            throw RecognizeError("parse", "unexpected answer")
         }
+    }
+
+    fun rotationBody(model: String, jpegs: List<ByteArray>): JsonObject = buildJsonObject {
+        put("model", model)
+        put("max_tokens", 4000)
+        put("fallbacks", "default")
+        putJsonObject("output_config") {
+            put("effort", "medium")
+            putJsonObject("format") {
+                put("type", "json_schema")
+                put("schema", rotationSchema)
+            }
+        }
+        putJsonArray("messages") {
+            addJsonObject {
+                put("role", "user")
+                putJsonArray("content") {
+                    jpegs.forEachIndexed { i, jpeg ->
+                        addJsonObject {
+                            put("type", "text")
+                            put("text", "Cover $i:")
+                        }
+                        addJsonObject {
+                            put("type", "image")
+                            putJsonObject("source") {
+                                put("type", "base64")
+                                put("media_type", "image/jpeg")
+                                put("data", Base64.getEncoder().encodeToString(jpeg))
+                            }
+                        }
+                    }
+                    addJsonObject {
+                        put("type", "text")
+                        put("text", ROTATION_PROMPT)
+                    }
+                }
+            }
+        }
+    }
+
+    /** For each cover photo (best ≤ 20 per call): degrees to turn it clockwise so it reads upright. */
+    suspend fun detectRotations(apiKey: String, model: String, jpegs: List<ByteArray>): List<Int> {
+        val out = ask(apiKey, rotationBody(model, jpegs), "too many covers at once")
+        val result = MutableList(jpegs.size) { 0 }
+        try {
+            for (c in parseJson(out).obj!!["covers"].arr!!) {
+                val o = c.obj ?: continue
+                val i = (o["index"] as? JsonPrimitive)?.intOrNull ?: continue
+                val r = (o["rotation"] as? JsonPrimitive)?.intOrNull ?: continue
+                if (i in result.indices && r in rotations) result[i] = r
+            }
+        } catch (_: Exception) {
+            throw RecognizeError("parse", "unexpected answer")
+        }
+        return result
     }
 }

@@ -93,9 +93,14 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
       }
     >
       <p className="muted small">{t('bulkEdit.intro')}</p>
-      <button className="btn small" disabled={!n} onClick={() => ui.open({ type: 'covers', ids: live })}>
-        📷 {t('covers.forThese', { n })}
-      </button>
+      <div className="row gap wrap">
+        <button className="btn small" disabled={!n} onClick={() => ui.open({ type: 'covers', ids: live })}>
+          📷 {t('covers.forThese', { n })}
+        </button>
+        <button className="btn small" disabled={!n} onClick={() => ui.open({ type: 'rotate', ids: live })}>
+          ⟳ {t('rotate.title')}
+        </button>
+      </div>
       <label>
         {t('field.room')}
         <select value={room} onChange={(e) => setRoom(e.target.value)}>

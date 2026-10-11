@@ -197,6 +197,11 @@ fun ItemScreen(screen: Screen.Detail) {
                 FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = picker.camera) { IconText(Icons.Filled.PhotoCamera, ui.t("cover.camera")) }
                     OutlinedButton(onClick = picker.gallery) { IconText(Icons.Filled.PhotoLibrary, ui.t("cover.gallery")) }
+                    item.coverData?.let { data ->
+                        OutlinedButton(onClick = {
+                            scope.launch { up("coverData" to withContext(Dispatchers.Default) { rotateDataUrl(data, 90) }) }
+                        }) { Text("⟳ ${ui.t("rotate.turn")}") }
+                    }
                     if (item.coverData != null) {
                         TextButton(onClick = {
                             up("coverData" to null)

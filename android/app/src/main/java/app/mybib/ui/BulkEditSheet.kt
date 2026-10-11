@@ -122,6 +122,10 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
                     onDismiss()
                     vm.push(Screen.Covers(live))
                 }, enabled = n > 0) { Text("📷 ${ui.t("covers.forThese", "n" to n)}") }
+                OutlinedButton(onClick = {
+                    onDismiss()
+                    vm.push(Screen.Rotate(live))
+                }, enabled = n > 0) { Text("⟳ ${ui.t("rotate.title")}") }
                 Dropdown(
                     ui.t("field.room"), room,
                     listOf(un) + ui.rooms.map { Opt(it, it) } + Opt(NONE, ui.t("places.none")) + Opt(NEW, ui.t("bulkEdit.newRoom")),

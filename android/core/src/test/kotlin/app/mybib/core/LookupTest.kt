@@ -98,4 +98,21 @@ class LookupTest {
         val e = assertFailsWith<RecognizeError> { bad.recognizePhoto(apiKey = "bad", model = "m", jpeg = byteArrayOf(1)) }
         assertEquals("auth", e.code)
     }
+
+    @Test fun claudeDetectsCoverRotations() = runBlocking {
+        var sent: HttpRequest? = null
+        val claude = Claude { req ->
+            sent = req
+            json(mapOf(
+                "stop_reason" to "end_turn",
+                "content" to listOf(mapOf("type" to "text", "text" to j(mapOf("covers" to listOf(
+                    mapOf("index" to 0, "rotation" to 0), mapOf("index" to 2, "rotation" to 90), mapOf("index" to 7, "rotation" to 180),
+                ))).toString())),
+            ))
+        }
+        assertEquals(listOf(0, 0, 90), claude.detectRotations("k", "m", listOf(byteArrayOf(1), byteArrayOf(2), byteArrayOf(3))))
+        val content = parseJson(sent!!.body!!.decodeToString()).obj!!["messages"].arr!![0].obj!!["content"].arr!!
+        assertEquals(7, content.size)
+        assertEquals("Cover 1:", content[2].obj!!["text"].string)
+    }
 }
