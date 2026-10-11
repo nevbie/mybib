@@ -363,8 +363,9 @@ export function groupKey(items: Item[]): string {
 }
 
 /**
- * Groups of probable duplicates – same ISBN, or same title + first creator + volume + kind + format
- * (the rules of `findDuplicate`). Groups marked "not duplicates" (`ignored` keys) are left out.
+ * Groups of probable duplicates: same ISBN, or same title, kind and format where author and volume match
+ * or are missing on one side (e.g. the same book entered once with and once without author).
+ * Groups marked "not duplicates" (`ignored` keys) are left out.
  */
 export function duplicateGroups(items: Item[], ignored: string[] = []): Item[][] {
   const parent = items.map((_, n) => n)
@@ -372,18 +373,30 @@ export function duplicateGroups(items: Item[], ignored: string[] = []): Item[][]
   const join = (a: number, b: number) => {
     parent[root(a)] = root(b)
   }
-  const seen = new Map<string, number>()
+  const byIsbn = new Map<string, number>()
+  const byTitle = new Map<string, number[]>()
   items.forEach((i, n) => {
-    const keys: string[] = []
-    if (i.isbn) keys.push(`isbn:${i.isbn}`)
-    const t = fold(i.title)
-    if (t) keys.push(['t', t, i.creators[0] ? fold(i.creators[0]) : '', i.volume ? fold(i.volume) : '', i.kind, i.format].join('\u0001'))
-    for (const k of keys) {
-      const m = seen.get(k)
-      if (m === undefined) seen.set(k, n)
+    if (i.isbn) {
+      const m = byIsbn.get(i.isbn)
+      if (m === undefined) byIsbn.set(i.isbn, n)
       else join(n, m)
     }
+    const t = fold(i.title)
+    if (t) {
+      const k = [t, i.kind, i.format].join('\u0001')
+      byTitle.set(k, [...(byTitle.get(k) ?? []), n])
+    }
   })
+  const fits = (a: string, b: string) => a === b || !a || !b
+  for (const list of byTitle.values()) {
+    for (let x = 0; x < list.length; x++) {
+      for (let y = x + 1; y < list.length; y++) {
+        const [i, j] = [items[list[x]], items[list[y]]]
+        if (fits(i.creators[0] ? fold(i.creators[0]) : '', j.creators[0] ? fold(j.creators[0]) : '') && fits(i.volume ? fold(i.volume) : '', j.volume ? fold(j.volume) : ''))
+          join(list[x], list[y])
+      }
+    }
+  }
   const groups = new Map<number, Item[]>()
   items.forEach((i, n) => {
     const r = root(n)

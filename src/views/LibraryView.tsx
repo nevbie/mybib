@@ -3,7 +3,7 @@ import { CategorySelect } from '../components/CategorySelect'
 import { ItemRow } from '../components/ItemRow'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
-import { applyFilters, EMPTY_FILTERS, openLoan, sortItems, type Filters, type SortKey } from '../logic/items'
+import { applyFilters, EMPTY_FILTERS, mergeGroup, openLoan, sortItems, type Filters, type SortKey } from '../logic/items'
 import { useStore } from '../store'
 import { FORMATS, KINDS, STATUSES } from '../types'
 import { useUI } from '../ui'
@@ -15,7 +15,7 @@ const PAGE = 120
 
 export function LibraryView() {
   const { t, lang } = useLang()
-  const { items, ready } = useStore()
+  const { items, ready, applyMerges } = useStore()
   const ui = useUI()
   const f = ui.filters
   const set = (patch: Partial<Filters>) => ui.setFilters({ ...f, ...patch })
@@ -44,6 +44,14 @@ export function LibraryView() {
       else n.add(id)
       return n
     })
+  // merge the selected entries into one (e.g. the same book entered twice, once without author)
+  const merge = () => {
+    const m = mergeGroup(list.filter((i) => sel?.has(i.id)))
+    if (!confirm(t('sel.mergeConfirm', { n: selected.length, title: m.keep.title }))) return
+    applyMerges([m])
+    setSel(null)
+    ui.openItem(m.keep.id)
+  }
   const extraActive = [f.status !== 'all', f.format !== 'all', f.room !== 'all', f.category !== 'all', f.minRating > 0].filter(Boolean).length
 
   return (
@@ -163,6 +171,9 @@ export function LibraryView() {
               </button>
               <button className="btn small primary" disabled={!selected.length} onClick={() => ui.open({ type: 'bulkEdit', ids: selected })}>
                 ✎ {t('sel.edit')}
+              </button>
+              <button className="btn small" disabled={selected.length < 2} onClick={merge} title={t('sel.merge')} aria-label={t('sel.merge')}>
+                🔗
               </button>
               <button className="icon-btn small" onClick={() => setSel(null)} aria-label={t('close')}>
                 ✕
