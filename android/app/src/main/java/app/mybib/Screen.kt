@@ -21,8 +21,17 @@ sealed class Screen {
     /** New entry (optionally prefilled from [draft]) or edit an existing one ([id]). */
     class Form(val id: String? = null, val draft: Draft? = null) : Screen()
 
-    /** Online search; [onPick] gets the chosen result after the search screen closed. */
-    class Search(val kind: String = "book", val title: String = "", val creator: String = "", val onPick: (Candidate) -> Unit) : Screen()
+    /**
+     * Online search; [onPick] gets the chosen result after the search screen closed.
+     * With [onPickMany] results can also be ticked and added several at once.
+     */
+    class Search(
+        val kind: String = "book",
+        val title: String = "",
+        val creator: String = "",
+        val onPickMany: ((List<Candidate>) -> Unit)? = null,
+        val onPick: (Candidate) -> Unit,
+    ) : Screen()
 
     class Scan : Screen()
 

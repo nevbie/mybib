@@ -4,6 +4,7 @@ package app.mybib.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,12 +15,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -33,6 +36,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +76,7 @@ import app.mybib.core.Loan
 import app.mybib.core.classifyCode
 import app.mybib.core.draftOf
 import app.mybib.core.enrichPatch
+import app.mybib.core.findDuplicate
 import app.mybib.core.findDuplicateOf
 import app.mybib.core.formats
 import app.mybib.core.isFalse
@@ -474,10 +480,13 @@ class SearchState(kind: String, title: String, creator: String) {
     var creator by mutableStateOf(creator)
     var busy by mutableStateOf(false)
     var results by mutableStateOf<List<Candidate>?>(null)
+    /** Indices of ticked results (multi-add). */
+    val picked = mutableStateListOf<Int>()
     var started = false
 }
 
 /** Search Google Books / Open Library / MusicBrainz; the picked result goes to [Screen.Search.onPick]. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SearchScreen(screen: Screen.Search) {
     val ui = LocalUi.current
@@ -488,6 +497,7 @@ fun SearchScreen(screen: Screen.Search) {
         if (st.title.isBlank() && st.creator.isBlank()) return
         st.busy = true
         st.results = null
+        st.picked.clear()
         scope.launch {
             try {
                 st.results = vm.lookup.searchOnline(st.kind, st.title, st.creator, vm.store.settings.value.googleBooksKey)
@@ -501,7 +511,34 @@ fun SearchScreen(screen: Screen.Search) {
         st.started = true
     }
     val search = KeyboardActions(onSearch = { run() })
-    SubScreen(ui.t("search.title")) {
+    val multi = screen.onPickMany
+    val results = st.results ?: emptyList()
+    fun addPicked() {
+        val list = st.picked.sorted().mapNotNull { results.getOrNull(it) }
+        if (list.isEmpty() || multi == null) return
+        vm.pop()
+        multi(list)
+    }
+    SubScreen(
+        ui.t("search.title"),
+        actions = {
+            if (multi != null && results.isNotEmpty()) {
+                val all = st.picked.size == results.size
+                TextButton(onClick = {
+                    st.picked.clear()
+                    if (!all) st.picked.addAll(results.indices)
+                }) { Text(if (all) ui.t("search.selectNone") else ui.t("search.selectAll")) }
+            }
+        },
+        bottomBar = {
+            if (multi != null && st.picked.isNotEmpty()) {
+                Button(
+                    onClick = { addPicked() },
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
+                ) { Text(ui.t("search.addN", "n" to st.picked.size)) }
+            }
+        },
+    ) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -520,15 +557,33 @@ fun SearchScreen(screen: Screen.Search) {
                     }
                     if (st.busy) Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     if (st.results?.isEmpty() == true) Text(ui.t("search.none"), Modifier.padding(16.dp))
+                    if (results.isNotEmpty()) Small(ui.t("search.count", "n" to results.size) + if (multi != null) " · " + ui.t("search.multiHint") else "")
                 }
             }
-            items(st.results ?: emptyList()) { c ->
+            itemsIndexed(results) { i, c ->
+                val ticked = i in st.picked
+                fun toggle() {
+                    if (ticked) st.picked.remove(i) else st.picked.add(i)
+                }
+                val dup = remember(c, ui.items) { findDuplicate(ui.items, title = c.title, isbn = c.data["isbn"].string, creators = c.creators) }
                 Row(
-                    Modifier.fillMaxWidth().clickable {
-                        vm.pop()
-                        screen.onPick(c)
-                    }.padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth().combinedClickable(
+                        onClick = {
+                            if (multi != null && st.picked.isNotEmpty()) {
+                                toggle()
+                            } else {
+                                vm.pop()
+                                screen.onPick(c)
+                            }
+                        },
+                        onLongClick = { if (multi != null) toggle() },
+                    ).padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (multi != null) {
+                        Checkbox(checked = ticked, onCheckedChange = { toggle() })
+                        Spacer(Modifier.width(4.dp))
+                    }
                     CoverImage(c.title, c.kind, c.coverUrl)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
@@ -536,6 +591,7 @@ fun SearchScreen(screen: Screen.Search) {
                         c.data["subtitle"].string?.let { Text(it) }
                         Text(c.creators.joinToString(", "))
                         Small(listOfNotNull(c.data["publisher"].display().ifEmpty { null }, c.data["year"].display().ifEmpty { null }, c.data["language"].display().ifEmpty { null }, c.via).joinToString(" · "))
+                        if (dup != null) Small("⚠ " + ui.t("search.have"))
                     }
                 }
             }

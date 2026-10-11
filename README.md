@@ -12,7 +12,7 @@ built like [whatsfordinner](https://github.com/nevbie/whatsfordinner).
   - **Shelf photo** → Claude reads all spines, you review/correct the list, details and covers are
     completed online. Needs your own Anthropic API key (Options), roughly 2–10 cents per photo.
   - **Cover photo** → the photo becomes the cover; with a key the title is recognised and completed online.
-  - **Online search** by title / author.
+  - **Online search** by title / author. In the Android app up to 60 results; tick several (or long-press) to add them all at once, e.g. a whole series.
   - **Manual entry** (games, DVDs, old or Chinese editions without barcode).
   - **Import file** – backups, or files made by Claude from shelf photos
     (skill [`regal-erfassen`](.claude/skills/regal-erfassen/SKILL.md)).

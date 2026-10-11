@@ -74,6 +74,11 @@ fun candidateDraft(c: Candidate, source: String = "search"): Draft = c.data + dr
 class Lookup(private val http: Http = UrlConnectionHttp()) {
     private val timeoutMs = 12_000
 
+    companion object {
+        /** Most results the online search shows (Google Books and Open Library give up to 40 each). */
+        const val MAX_RESULTS = 60
+    }
+
     /** Last problem Google Books reported: "" = fine, "quota" = daily limit reached, "key" = key rejected. */
     @Volatile private var googleProblem = ""
 
@@ -133,7 +138,7 @@ class Lookup(private val http: Http = UrlConnectionHttp()) {
         ), "Google Books")
     }
 
-    private suspend fun google(q: String, key: String, max: Int = 8): List<Candidate> {
+    private suspend fun google(q: String, key: String, max: Int = 40): List<Candidate> {
         val url = "https://www.googleapis.com/books/v1/volumes?q=${enc(q)}&maxResults=$max&printType=books${if (key.isNotEmpty()) "&key=${enc(key)}" else ""}"
         val (status, data) = getJson(url)
         if (status == 429) googleProblem = "quota"
@@ -163,7 +168,7 @@ class Lookup(private val http: Http = UrlConnectionHttp()) {
 
     private suspend fun openLibrarySearch(params: String): List<Candidate> {
         val fields = "title,subtitle,author_name,first_publish_year,publisher,isbn,cover_i,language,number_of_pages_median"
-        val (_, data) = getJson("https://openlibrary.org/search.json?$params&limit=8&fields=$fields")
+        val (_, data) = getJson("https://openlibrary.org/search.json?$params&limit=40&fields=$fields")
         val docs = data.obj?.get("docs").arr ?: return emptyList()
         return docs.mapNotNull { it.obj }.filter { it["title"].string != null }.map { d ->
             val coverId = d["cover_i"]
@@ -185,7 +190,7 @@ class Lookup(private val http: Http = UrlConnectionHttp()) {
     // ---------- MusicBrainz ----------
 
     private suspend fun musicbrainz(query: String): List<Candidate> {
-        val (_, data) = getJson("https://musicbrainz.org/ws/2/release/?query=${enc(query)}&fmt=json&limit=8")
+        val (_, data) = getJson("https://musicbrainz.org/ws/2/release/?query=${enc(query)}&fmt=json&limit=40")
         val releases = data.obj?.get("releases").arr ?: return emptyList()
         return releases.mapNotNull { it.obj }.map { r ->
             val fmt = r["media"].arr?.firstNotNullOfOrNull { it.obj }?.get("format").string ?: ""
@@ -289,7 +294,7 @@ class Lookup(private val http: Http = UrlConnectionHttp()) {
             list = musicbrainz(q)
             if (kind == "dvd") list = list.filter { it.kind == "dvd" } + list.filter { it.kind != "dvd" }
         }
-        return withWorkingCovers(list.take(10))
+        return withWorkingCovers(list.take(MAX_RESULTS))
     }
 
     private fun dedupe(list: List<Candidate>): List<Candidate> {
