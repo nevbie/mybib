@@ -70,6 +70,7 @@ import app.mybib.Screen
 import app.mybib.core.Filters
 import app.mybib.core.duplicateGroups
 import app.mybib.core.candidateDraft
+import app.mybib.core.draftOf
 import app.mybib.core.kinds
 import app.mybib.core.summarizePlaces
 import app.mybib.core.toCategory
@@ -80,11 +81,20 @@ fun AddScreen() {
     val ui = LocalUi.current
     val vm = ui.vm
     val importFile = rememberImporter()
+    val ctx = LocalContext.current
     val ways = listOf(
         Triple(Icons.Filled.QrCodeScanner, ui.t("add.scan") to ui.t("add.scanText")) { vm.push(Screen.Scan()) },
         Triple(Icons.Filled.CameraAlt, ui.t("add.shelf") to (if (ui.settings.claudeKey.isNotEmpty()) ui.t("add.shelfText") else ui.t("add.shelfTextNoKey"))) { vm.push(Screen.Photo("shelf")) },
         Triple(Icons.Filled.Image, ui.t("add.cover") to ui.t("add.coverText")) { vm.push(Screen.Photo("cover")) },
-        Triple(Icons.Filled.Search, ui.t("add.search") to ui.t("add.searchText")) { vm.push(Screen.Search { c -> vm.push(Screen.Form(draft = candidateDraft(c))) }) },
+        Triple(Icons.Filled.Search, ui.t("add.search") to ui.t("add.searchText")) {
+            vm.push(
+                Screen.Search(onPickMany = { list ->
+                    val room = ui.settings.lastRoom.ifEmpty { null }
+                    vm.store.addItems(list.map { candidateDraft(it) + draftOf("room" to room) })
+                    toast(ctx, ui.t("search.added", "n" to list.size))
+                }) { c -> vm.push(Screen.Form(draft = candidateDraft(c))) },
+            )
+        },
         Triple(Icons.Filled.EditNote, ui.t("add.manual") to ui.t("add.manualText")) { vm.push(Screen.Form()) },
         Triple(Icons.Filled.AutoAwesome, ui.t("bulk.title") to ui.t("bulk.short")) { vm.push(Screen.Bulk()) },
         Triple(Icons.Filled.FileDownload, ui.t("add.import") to ui.t("add.importText")) { importFile() },
