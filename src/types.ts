@@ -92,6 +92,8 @@ export interface Settings {
   rooms: string[]
   /** category list in display order; [] = the default categories */
   categories: string[]
+  /** duplicate groups marked "not duplicates" (see logic/items groupKey) */
+  dupIgnore: string[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lastRoom: '',
   rooms: [],
   categories: [],
+  dupIgnore: [],
 }
 
 export const DEFAULT_ROOMS: [string, string][] = [

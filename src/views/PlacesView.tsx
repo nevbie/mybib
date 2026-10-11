@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useCategories, useRooms } from '../components/usePlaces'
 import { categoryLabel } from '../logic/categories'
 import { useLang } from '../i18n'
-import { EMPTY_FILTERS, openLoan, summarizePlaces } from '../logic/items'
+import { duplicateGroups, EMPTY_FILTERS, openLoan, summarizePlaces } from '../logic/items'
 import { useStore } from '../store'
 import { DEFAULT_ROOMS, KINDS } from '../types'
 import { useUI } from '../ui'
@@ -56,6 +56,8 @@ export function PlacesView() {
     ui.go('library')
   }
 
+  const dups = useMemo(() => duplicateGroups(items, settings.dupIgnore).length, [items, settings.dupIgnore])
+
   const stats = useMemo(() => {
     const owned = items.filter((i) => i.owned)
     return {
@@ -105,6 +107,12 @@ export function PlacesView() {
           </div>
         )}
       </div>
+
+      <button className="card tidy-card" onClick={() => ui.open({ type: 'tidy' })}>
+        <strong>🧹 {t('tidy.title')}</strong>
+        {dups > 0 && <span className="badge badge-check">{t('tidy.dupCount', { n: dups })}</span>}
+        <span className="muted small">{t('tidy.card')}</span>
+      </button>
 
       {catStats.length > 0 && (
         <>

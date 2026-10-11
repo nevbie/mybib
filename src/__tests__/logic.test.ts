@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { classifyCode, isbn10to13, isValidEan13, isValidIsbn10 } from '../logic/isbn'
-import { applyFilters, EMPTY_FILTERS, findDuplicate, fold, mergeItems, normalizeItem, parseImport, sortItems, summarizePlaces, titleKey, toCSV, toExport } from '../logic/items'
+import { applyFilters, duplicateGroups, EMPTY_FILTERS, findDuplicate, groupKey, mergeGroup, fold, mergeItems, normalizeItem, parseImport, sortItems, summarizePlaces, titleKey, toCSV, toExport } from '../logic/items'
 import { matchScore } from '../logic/lookup'
 import { toDraft } from '../logic/recognized'
 
@@ -148,5 +148,30 @@ describe('recognition helpers', () => {
     expect(matchScore(known, { via: '', title: 'Open City', subtitle: 'Roman', creators: ['Teju Cole'] })).toBeGreaterThan(0.9)
     expect(matchScore(known, { via: '', title: 'Open City', creators: ['Someone'] })).toBeLessThan(0.75)
     expect(matchScore(known, { via: '', title: 'Closed Town', creators: ['Teju Cole'] })).toBeLessThan(0.75)
+  })
+})
+
+describe('duplicates', () => {
+  const mk = (d: Record<string, unknown>) => normalizeItem({ title: 'x', ...d })
+  it('groups by ISBN and by title/creator/volume/kind/format', () => {
+    const a = mk({ id: 'a', title: 'Momo', creators: ['Michael Ende'], isbn: '9783522202107' })
+    const b = mk({ id: 'b', title: 'momo', creators: ['Michael Ende'] })
+    const c = mk({ id: 'c', title: 'Anderes Buch', isbn: '9783522202107' })
+    const d = mk({ id: 'd', title: 'Momo', creators: ['Michael Ende'], format: 'ebook' })
+    const e = mk({ id: 'e', title: 'Sahara', creators: ['A'] })
+    const f = mk({ id: 'f', title: 'Sahara', creators: ['B'] })
+    const groups = duplicateGroups([a, b, c, d, e, f])
+    expect(groups.map((g) => g.map((i) => i.id).sort())).toEqual([['a', 'b', 'c']])
+    expect(duplicateGroups([a, b, c, d], [groupKey(groups[0])])).toEqual([])
+  })
+
+  it('merges into the most complete entry and combines personal data', () => {
+    const a = mk({ id: 'a', title: 'Momo', creators: ['Michael Ende'], rating: 2, status: 'want', notes: 'Geschenk', addedAt: '2026-01-02', loans: [{ to: 'Anna', since: '2026-02-01', returned: '2026-03-01' }] })
+    const b = mk({ id: 'b', title: 'Momo', creators: ['Michael Ende'], publisher: 'Thienemann', year: 1973, isbn: '9783522202107', coverUrl: 'http://c', rating: 5, status: 'done', tags: ['Kinder'], addedAt: '2026-01-05', owned: false })
+    const { keep, remove } = mergeGroup([a, b])
+    expect(keep.id).toBe('b')
+    expect(remove).toEqual(['a'])
+    expect(keep).toMatchObject({ publisher: 'Thienemann', rating: 5, status: 'done', notes: 'Geschenk', owned: true, addedAt: '2026-01-02', tags: ['Kinder'] })
+    expect(keep.loans).toHaveLength(1)
   })
 })

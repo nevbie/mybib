@@ -3,6 +3,7 @@ import { useStore } from './store'
 import { useUI, type TabId } from './ui'
 import { AddView } from './views/AddView'
 import { BulkEditSheet } from './views/BulkEditSheet'
+import { TidySheet } from './views/TidySheet'
 import { BulkSheet } from './views/BulkSheet'
 import { ItemDetail } from './views/ItemDetail'
 import { ItemForm } from './views/ItemForm'
@@ -55,6 +56,8 @@ export function App() {
             return <BulkEditSheet key={i} ids={o.ids} />
           case 'bulk':
             return <BulkSheet key={i} />
+          case 'tidy':
+            return <TidySheet key={i} />
           case 'scan':
             return <ScanSheet key={i} />
           case 'photo':
