@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.mybib.Screen
 import app.mybib.core.draftOf
 import app.mybib.core.formats
 import app.mybib.core.j
@@ -116,6 +118,10 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Small(ui.t("bulkEdit.intro"))
+                OutlinedButton(onClick = {
+                    onDismiss()
+                    vm.push(Screen.Covers(live))
+                }, enabled = n > 0) { Text("📷 ${ui.t("covers.forThese", "n" to n)}") }
                 Dropdown(
                     ui.t("field.room"), room,
                     listOf(un) + ui.rooms.map { Opt(it, it) } + Opt(NONE, ui.t("places.none")) + Opt(NEW, ui.t("bulkEdit.newRoom")),
