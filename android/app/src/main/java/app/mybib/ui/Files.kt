@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import app.mybib.core.Store
 import app.mybib.core.parseImportFile
 import app.mybib.core.toCSV
 import app.mybib.core.toExport
@@ -133,22 +134,53 @@ fun rotateDataUrl(dataUrl: String, rotation: Int): String {
 /** The JPEG bytes of a data URL (to send own covers to Claude). */
 fun dataUrlBytes(dataUrl: String): ByteArray = Base64.getDecoder().decode(dataUrl.substring(dataUrl.indexOf(',') + 1))
 
+private const val PENDING = "pending_photo"
+
+private fun clearPendingPhoto(ctx: Context) = ctx.getSharedPreferences(PENDING, Context.MODE_PRIVATE).edit().clear().apply()
+
+/**
+ * If Android closed the app while the camera was open (low memory), the photo result never arrives.
+ * The picker notes what the photo was for ("cover:<item id>"); on the next start this saves it as that cover.
+ */
+fun applyPendingPhoto(ctx: Context, store: Store) {
+    val p = ctx.getSharedPreferences(PENDING, Context.MODE_PRIVATE)
+    val key = p.getString("key", null) ?: return
+    val path = p.getString("path", null)
+    p.edit().clear().apply()
+    val file = path?.let(::File) ?: return
+    if (!key.startsWith("cover:") || !file.exists() || file.length() == 0L) return
+    val id = key.removePrefix("cover:")
+    if (store.byId(id) == null) return
+    val data = coverDataUrl(ctx, Uri.fromFile(file)) ?: return
+    store.updateItem(id, "coverData" to data)
+}
+
 class PhotoPicker(val camera: () -> Unit, val gallery: () -> Unit)
 
 /** Camera (asks for the permission first) and gallery picker; [onPicked] gets the photo URIs. */
 @Composable
-fun rememberPhotoPicker(multiple: Boolean = false, onPicked: (List<Uri>) -> Unit): PhotoPicker {
+fun rememberPhotoPicker(multiple: Boolean = false, pendingKey: (() -> String?)? = null, onPicked: (List<Uri>) -> Unit): PhotoPicker {
     val ctx = LocalContext.current
     val latest by rememberUpdatedState(onPicked)
+    val key by rememberUpdatedState(pendingKey)
     var pending by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var pendingPath by rememberSaveable { mutableStateOf<String?>(null) }
     val take = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val u = pending
-        if (ok && u != null) latest(listOf(u))
+        val written = pendingPath?.let { File(it).length() > 0 } ?: false
+        clearPendingPhoto(ctx)
+        // some camera apps report "cancelled" although they saved the photo
+        if (u != null && (ok || written)) latest(listOf(u))
     }
     fun launchCamera() {
         val dir = File(ctx.cacheDir, "photos").apply { mkdirs() }
-        val u = FileProvider.getUriForFile(ctx, authority(ctx), File.createTempFile("photo", ".jpg", dir))
+        val file = File.createTempFile("photo", ".jpg", dir)
+        val u = FileProvider.getUriForFile(ctx, authority(ctx), file)
         pending = u
+        pendingPath = file.path
+        key?.invoke()?.let { k ->
+            ctx.getSharedPreferences(PENDING, Context.MODE_PRIVATE).edit().putString("key", k).putString("path", file.path).apply()
+        }
         take.launch(u)
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) launchCamera() }
@@ -192,7 +224,7 @@ fun shareFile(ctx: Context, name: String, text: String, mime: String) {
 
 fun stamp() = LocalDate.now().toString()
 
-fun exportJson(ui: Ui) = toExport(ui.store.items.value).toString()
+fun exportJson(ui: Ui) = toExport(ui.store.items.value, ui.store.removed.value).toString()
 
 fun exportCsv(ui: Ui) = toCSV(ui.store.items.value)
 
@@ -231,8 +263,9 @@ fun rememberImporter(): () -> Unit {
             val msg = try {
                 val text = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() } }
                 val f = parseImportFile(text)
-                val r = u.store.importItems(f.items, f.updateOnly)
-                u.t("data.imported", "added" to r.added, "updated" to r.updated, "skipped" to r.skipped)
+                val r = u.store.importItems(f.items, f.updateOnly, f.removed)
+                u.t("data.imported", "added" to r.added, "updated" to r.updated, "skipped" to r.skipped) +
+                    (if (r.removed > 0) " " + u.t("data.importRemoved", "n" to r.removed) else "")
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 u.t("data.importError", "e" to (e.message ?: e.toString()))

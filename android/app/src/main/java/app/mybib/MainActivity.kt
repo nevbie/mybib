@@ -10,13 +10,21 @@ import app.mybib.ui.Root
 import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
+    private var model: AppViewModel? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             val vm: AppViewModel = viewModel()
+            model = vm
             MybibTheme { Root(vm) }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        model?.saveUi()
     }
 
     override fun onStop() {

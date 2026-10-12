@@ -26,6 +26,9 @@ class Store(
     private val _items = MutableStateFlow<List<Item>>(emptyList())
     private val _settings = MutableStateFlow(Settings())
     private val _ready = MutableStateFlow(false)
+    /** ids deleted or merged away here – kept so an import of an older backup doesn't bring them back */
+    private val _removed = MutableStateFlow<Set<String>>(emptySet())
+    val removed: StateFlow<Set<String>> = _removed.asStateFlow()
     val items: StateFlow<List<Item>> = _items.asStateFlow()
     val settings: StateFlow<Settings> = _settings.asStateFlow()
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
@@ -42,6 +45,7 @@ class Store(
             if (f.exists()) {
                 val data = parseJson(f.readText()).obj
                 _items.value = data?.get("items").arr?.mapNotNull { it.obj }?.map { normalizeItem(it) } ?: emptyList()
+                _removed.value = data?.get("removed").strings.toSet()
             }
             val s = File(dir, "settings.json")
             if (s.exists()) parseJson(s.readText()).obj?.let { _settings.value = Settings.fromJson(it) }
@@ -71,7 +75,7 @@ class Store(
 
     /** Write the catalogue now (atomically: temp file, then rename). Blocking. */
     fun save() = synchronized(lock) {
-        write("items.json", draftOf("version" to 1, "items" to _items.value.map { it.toJson() }).let(::j).toString())
+        write("items.json", draftOf("version" to 1, "items" to _items.value.map { it.toJson() }, "removed" to _removed.value.toList()).let(::j).toString())
     }
 
     private fun saveSettings() = synchronized(lock) { write("settings.json", _settings.value.toJson().toString()) }
@@ -105,6 +109,7 @@ class Store(
 
     fun removeItems(ids: Collection<String>) {
         val set = ids.toSet()
+        _removed.update { it + set }
         _items.update { list -> list.filter { it.id !in set } }
         changed()
     }
@@ -114,18 +119,23 @@ class Store(
         val now = nowIso()
         val kept = merges.associate { it.keep.id to it.keep.copy(updatedAt = now) }
         val gone = merges.flatMap { it.remove }.toSet()
+        _removed.update { it + gone }
         _items.update { list -> list.filter { it.id !in gone }.map { kept[it.id] ?: it } }
         changed()
     }
 
-    fun importItems(incoming: List<Item>, updateOnly: Boolean = false): MergeResult {
-        val r = mergeItems(_items.value, incoming, updateOnly)
+    fun importItems(incoming: List<Item>, updateOnly: Boolean = false, removedThere: Collection<String> = emptyList()): MergeResult {
+        val r = mergeItems(_items.value, incoming, updateOnly, _removed.value, removedThere)
+        val keep = r.items.map { it.id }.toSet()
+        _removed.update { it + _items.value.map { i -> i.id }.filter { id -> id !in keep } }
         _items.value = r.items
         changed()
         return r
     }
 
+    /** Start over (wipe) or restore: also forgets deleted ids, so a backup can bring everything back. */
     fun replaceAll(list: List<Item>) {
+        _removed.value = emptySet()
         _items.value = list.toList()
         changed()
     }

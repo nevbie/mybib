@@ -3,6 +3,20 @@
 package app.mybib.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Reorder
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.SmallFloatingActionButton
+import app.mybib.core.allLanguages
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -78,6 +92,7 @@ fun LibraryScreen() {
     val selected = if (sel == null) emptyList() else list.filter { it.id in sel }.map { it.id }
     var bulkEdit by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val grid = vm.view == "grid"
 
     // merge the selected entries into one, choosing which cover, author … to keep
     fun merge() {
@@ -87,19 +102,26 @@ fun LibraryScreen() {
     fun set(nf: Filters) {
         vm.filters = nf
     }
+    fun open(id: String) {
+        val s = vm.selection
+        if (s != null) vm.selection = if (id in s) s - id else s + id else vm.push(Screen.Detail(id))
+    }
+    // a long press starts the selection (or adds to it) – also far down the list
+    fun longPress(id: String) {
+        vm.selection = (vm.selection ?: emptySet()) + id
+    }
 
     @Composable
     fun Chip(label: String, on: Boolean, n: Int? = null, tap: () -> Unit) =
         FilterChip(selected = on, onClick = tap, label = { Text(if (n == null) label else "$label  $n") })
 
-    LazyColumn(state = vm.libraryList, modifier = Modifier.fillMaxSize()) {
-        item {
+    @Composable
+    fun Header() {
+        Column {
             Text(buildAnnotatedString {
                 withStyle(SpanStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold)) { append("mybib ") }
                 withStyle(SpanStyle(fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)) { append("${items.size}") }
             }, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp))
-        }
-        item {
             OutlinedTextField(
                 value = f.q,
                 onValueChange = { set(vm.filters.copy(q = it)) },
@@ -111,14 +133,12 @@ fun LibraryScreen() {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             )
-        }
-        item {
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Chip(ui.t("kind.all"), f.kind == "all") { set(f.copy(kind = "all")) }
-                for (k in kinds) Chip(ui.t("kind.$k.pl"), f.kind == k) { set(f.copy(kind = if (f.kind == k) "all" else k)) }
+                for (k in kinds.flatMap { if (it == "book") listOf("book", "ebook") else listOf(it) }) {
+                    Chip(if (k == "ebook") ui.t("lib.ebooks") else ui.t("kind.$k.pl"), f.kind == k) { set(f.copy(kind = if (f.kind == k) "all" else k)) }
+                }
             }
-        }
-        item {
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Chip(ui.t("scope.all"), f.scope == "all") { set(f.copy(scope = "all")) }
                 for (sc in listOf("wish", "lent", "recommend", "check")) {
@@ -126,10 +146,8 @@ fun LibraryScreen() {
                 }
                 Chip("⚙︎ ${ui.t("lib.more")}", vm.libraryMore || f.extraActive > 0, if (f.extraActive > 0) f.extraActive else null) { vm.libraryMore = !vm.libraryMore }
             }
-        }
-        if (vm.libraryMore) item { FilterPanel(f) }
-        if (items.isEmpty()) {
-            item {
+            if (vm.libraryMore) FilterPanel(f)
+            if (items.isEmpty()) {
                 Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(ui.t("lib.empty"), textAlign = TextAlign.Center)
                     Spacer(Modifier.height(16.dp))
@@ -139,9 +157,21 @@ fun LibraryScreen() {
                         Text(ui.t("nav.add"))
                     }
                 }
+            } else if (sel == null) {
+                Toolbar(list.size, items.size)
             }
-        } else if (sel != null) {
-            item {
+            if (items.isNotEmpty() && list.isEmpty()) {
+                Text(ui.t("lib.noMatch"), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(32.dp))
+            }
+        }
+    }
+
+    val scrolledFar = if (grid) vm.libraryGrid.firstVisibleItemIndex > 12 else vm.libraryList.firstVisibleItemIndex > 8
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            // the selection bar stays on screen however far down the list you are
+            if (sel != null) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
                         .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp)).padding(start = 12.dp),
@@ -162,42 +192,75 @@ fun LibraryScreen() {
                     IconButton(onClick = { vm.selection = null }) { Icon(Icons.Filled.Close, contentDescription = null) }
                 }
             }
-        } else {
-            item {
-                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Small(if (list.size != items.size) ui.t("lib.shown", "n" to list.size) else "", Modifier.weight(1f))
-                    if (list.isNotEmpty()) {
-                        TextButton(onClick = { vm.selection = emptySet() }) {
-                            Icon(Icons.Filled.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(ui.t("sel.start"))
-                        }
+            if (grid) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(104.dp),
+                    state = vm.libraryGrid,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 80.dp),
+                ) {
+                    item(span = { GridItemSpan(maxLineSpan) }) { Header() }
+                    gridItems(list, key = { it.id }) { item ->
+                        GridTile(item, onClick = { open(item.id) }, selected = sel?.contains(item.id), onLongClick = { longPress(item.id) })
+                    }
+                }
+            } else {
+                LazyColumn(state = vm.libraryList, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+                    item { Header() }
+                    items(list, key = { it.id }) { item ->
+                        ItemTile(
+                            item = item,
+                            selected = sel?.contains(item.id),
+                            onClick = { open(item.id) },
+                            onLongClick = { longPress(item.id) },
+                            compact = vm.view == "compact",
+                        )
                     }
                 }
             }
         }
-        if (items.isNotEmpty() && list.isEmpty()) {
-            item { Text(ui.t("lib.noMatch"), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) }
-        }
-        items(list, key = { it.id }) { item ->
-            ItemTile(
-                item = item,
-                selected = sel?.contains(item.id),
-                onClick = {
-                    val s = vm.selection
-                    if (s != null) {
-                        vm.selection = if (item.id in s) s - item.id else s + item.id
-                    } else {
-                        vm.push(Screen.Detail(item.id))
-                    }
-                },
-                onLongClick = if (sel == null) {
-                    { vm.selection = setOf(item.id) }
-                } else null,
-            )
+        if (scrolledFar) {
+            SmallFloatingActionButton(
+                onClick = { scope.launch { if (grid) vm.libraryGrid.animateScrollToItem(0) else vm.libraryList.animateScrollToItem(0) } },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            ) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = ui.t("lib.top")) }
         }
     }
     if (bulkEdit) BulkEditSheet(selected) { bulkEdit = false }
+}
+
+/** Number of matches, sort, view mode and "Select" – above the list. */
+@Composable
+private fun Toolbar(shown: Int, total: Int) {
+    val ui = LocalUi.current
+    val vm = ui.vm
+    var sortMenu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Small(if (shown != total) ui.t("lib.shown", "n" to shown) else "", Modifier.weight(1f))
+        Box {
+            TextButton(onClick = { sortMenu = true }) { Text("↕ ${ui.t("sort.${vm.sort}")}", maxLines = 1) }
+            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                for (k in sortKeys) {
+                    DropdownMenuItem(text = { Text(ui.t("sort.$k")) }, onClick = {
+                        vm.sort = k
+                        sortMenu = false
+                    })
+                }
+            }
+        }
+        for ((v, icon) in listOf("list" to Icons.AutoMirrored.Filled.List, "compact" to Icons.Filled.Reorder, "grid" to Icons.Filled.GridView)) {
+            IconButton(onClick = { vm.view = v }, modifier = Modifier.size(36.dp)) {
+                Icon(icon, contentDescription = ui.t("lib.view.$v"), tint = if (vm.view == v) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (shown > 0) {
+            TextButton(onClick = { vm.selection = emptySet() }) {
+                Icon(Icons.Filled.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(ui.t("sel.start"))
+            }
+        }
+    }
 }
 
 @Composable
@@ -214,7 +277,7 @@ private fun FilterPanel(f: Filters) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Dropdown(
                     ui.t("lib.status"), f.status,
-                    listOf(Opt("all", any)) + statuses.map { Opt(it, ui.t("status.${if (f.kind == "all") "book" else f.kind}.$it")) },
+                    listOf(Opt("all", any)) + statuses.map { Opt(it, ui.t("status.${if (f.kind == "all" || f.kind == "ebook") "book" else f.kind}.$it")) },
                     { set(f.copy(status = it)) }, Modifier.weight(1f),
                 )
                 Dropdown(ui.t("field.format"), f.format, listOf(Opt("all", any)) + formats.map { Opt(it, ui.t("format.$it")) }, { set(f.copy(format = it)) }, Modifier.weight(1f))
@@ -229,7 +292,14 @@ private fun FilterPanel(f: Filters) {
                 )
                 Dropdown(ui.t("lib.minRating"), f.minRating, listOf(Opt(0, any)) + (1..5).map { Opt(it, "★".repeat(it)) }, { set(f.copy(minRating = it)) }, Modifier.weight(1f))
             }
-            Dropdown(ui.t("lib.sort"), vm.sort, sortKeys.map { Opt(it, ui.t("sort.$it")) }, { vm.sort = it })
+            val languages = remember(ui.items) { allLanguages(ui.items) }
+            if (languages.isNotEmpty()) {
+                Dropdown(
+                    ui.t("lib.language"), f.language,
+                    listOf(Opt("all", any)) + languages.map { Opt(it, it) } + Opt("", ui.t("lib.noLanguage")),
+                    { set(f.copy(language = it)) },
+                )
+            }
             TextButton(onClick = { set(Filters()) }, modifier = Modifier.align(Alignment.End)) { Text(ui.t("lib.reset")) }
         }
     }

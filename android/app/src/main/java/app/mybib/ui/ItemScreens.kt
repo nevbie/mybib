@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.mybib.AppViewModel
+import androidx.lifecycle.viewModelScope
 import app.mybib.Screen
 import app.mybib.core.Candidate
 import app.mybib.core.Draft
@@ -133,11 +134,12 @@ fun ItemScreen(screen: Screen.Detail) {
         val p = d.split("-")
         return if (p.size == 3 && ui.lang == "de") "${p[2].toIntOrNull() ?: p[2]}.${p[1].toIntOrNull() ?: p[1]}.${p[0]}" else d
     }
-    val picker = rememberPhotoPicker { uris ->
-        scope.launch {
-            val data = withContext(Dispatchers.IO) { coverDataUrl(ctx, uris.first()) }
+    // the view model scope, so saving goes on even if this screen is left meanwhile
+    val picker = rememberPhotoPicker(pendingKey = { "cover:${screen.id}" }) { uris ->
+        coverMenu = false
+        vm.viewModelScope.launch {
+            val data = withContext(Dispatchers.IO) { coverDataUrl(ctx.applicationContext, uris.first()) }
             if (data != null) vm.store.updateItem(screen.id, "coverData" to data)
-            coverMenu = false
         }
     }
 

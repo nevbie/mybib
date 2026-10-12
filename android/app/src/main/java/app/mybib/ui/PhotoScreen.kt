@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewModelScope
 import app.mybib.Screen
 import app.mybib.core.Draft
 import app.mybib.core.findMatchOf
@@ -112,8 +113,7 @@ class PhotoState {
 fun PhotoScreen(screen: Screen.Photo) {
     val ui = LocalUi.current
     val vm = ui.vm
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current.applicationContext
     val st = screen.keep("photo") { PhotoState() }
     val shelf = screen.mode == "shelf"
     val hasKey = ui.settings.claudeKey.isNotEmpty()
@@ -131,6 +131,7 @@ fun PhotoScreen(screen: Screen.Photo) {
 
     suspend fun readShelf(photos: List<Uri>) {
         st.busy = true
+        vm.keepScreenOn = true
         for ((n, uri) in photos.withIndex()) {
             st.status = ui.t("ai.reading", "i" to n + 1, "n" to photos.size)
             try {
@@ -148,6 +149,7 @@ fun PhotoScreen(screen: Screen.Photo) {
             }
         }
         st.busy = false
+        vm.keepScreenOn = false
         st.status = ""
     }
 
@@ -158,6 +160,7 @@ fun PhotoScreen(screen: Screen.Photo) {
      */
     suspend fun readCovers(photos: List<Uri>) {
         st.busy = true
+        vm.keepScreenOn = true
         for ((n, uri) in photos.withIndex()) {
             st.status = ui.t("ai.readingCovers", "i" to n + 1, "n" to photos.size)
             // large enough to read several titles on one photo and to cut covers out of it
@@ -193,17 +196,20 @@ fun PhotoScreen(screen: Screen.Photo) {
             }
         }
         st.busy = false
+        vm.keepScreenOn = false
         st.status = ""
     }
 
     val picker = rememberPhotoPicker(multiple = true) { uris ->
-        scope.launch { if (shelf) readShelf(uris) else readCovers(uris) }
+        // the view model scope: reading goes on when the app is left or the screen turns
+        vm.viewModelScope.launch { if (shelf) readShelf(uris) else readCovers(uris) }
     }
 
-    fun addAll() = scope.launch {
+    fun addAll() = vm.viewModelScope.launch {
         val sel = st.rows.filter { it.selected && it.title.isNotBlank() }
         val r0 = room
         st.busy = true
+        vm.keepScreenOn = true
         val drafts = mutableListOf<Draft>()
         var completed = 0
         for ((n, row) in sel.withIndex()) {
@@ -238,6 +244,7 @@ fun PhotoScreen(screen: Screen.Photo) {
         if (drafts.isNotEmpty()) vm.store.addItems(drafts)
         vm.store.updateSettings { it.copy(lastRoom = r0) }
         st.busy = false
+        vm.keepScreenOn = false
         st.status = ""
         vm.dialogs.info(if (completed > 0) ui.t("ai.addedCompleted", "n" to drafts.size, "m" to completed) else ui.t("ai.added", "n" to drafts.size))
         vm.pop()
