@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewModelScope
 import app.mybib.Screen
 import app.mybib.core.sortItems
 import kotlinx.coroutines.Dispatchers
@@ -73,13 +74,13 @@ fun CoversScreen(screen: Screen.Covers) {
     val missing = live.filter { it.coverData == null }
 
     suspend fun save(id: String, uri: Uri) {
-        val data = withContext(Dispatchers.IO) { coverDataUrl(ctx, uri) } ?: return
+        val data = withContext(Dispatchers.IO) { coverDataUrl(ctx.applicationContext, uri) } ?: return
         vm.store.updateItem(id, "coverData" to data)
     }
 
-    val one = rememberPhotoPicker { uris ->
+    val one = rememberPhotoPicker(pendingKey = { st.target?.let { "cover:$it" } }) { uris ->
         val id = st.target ?: return@rememberPhotoPicker
-        scope.launch {
+        vm.viewModelScope.launch {
             st.busy = ui.t("covers.saving")
             save(id, uris.first())
             st.busy = ""

@@ -290,3 +290,49 @@ class MergeChoicesTest {
         assertEquals(3, m.keep.rating)
     }
 }
+
+class RemovedEntriesTest {
+    private val a = item("id" to "a", "title" to "Western Circus", "volume" to "22")
+    private val b = item("id" to "b", "title" to "Western Circus", "volume" to "62")
+    private val c = item("id" to "c", "title" to "Momo")
+
+    @Test fun importDoesNotBringBackRemovedEntries() {
+        val r = mergeItems(listOf(b, c), listOf(a, b, c), removedHere = listOf("a"))
+        assertEquals(listOf("b", "c"), ids(r.items))
+        assertEquals(0, r.added)
+    }
+
+    @Test fun importAppliesTheFilesRemovedList() {
+        val r = mergeItems(listOf(a, b, c), listOf(b, c), removedThere = listOf("a"))
+        assertEquals(listOf("b", "c"), ids(r.items))
+        assertEquals(1, r.removed)
+    }
+
+    @Test fun exportAndStoreKeepRemovedIds() {
+        assertEquals(listOf("a"), parseImportFile(toExport(listOf(b), listOf("a")).toString()).removed)
+        assertTrue(parseImportFile(toExport(listOf(b)).toString()).removed.isEmpty())
+        val dir = kotlin.io.path.createTempDirectory().toFile()
+        val s = Store(dir)
+        s.replaceAll(listOf(a, b, c))
+        val m = mergeGroup(listOf(a, b))
+        s.applyMerges(listOf(m))
+        s.removeItems(listOf("c"))
+        s.flush()
+        val s2 = Store(dir)
+        s2.load()
+        assertEquals(setOf(m.remove.single(), "c"), s2.removed.value)
+        s2.importItems(listOf(a, b, c))
+        assertEquals(listOf(m.keep.id), ids(s2.items.value))
+    }
+
+    @Test fun filtersByLanguageAndEbooks() {
+        val p = item("id" to "p", "title" to "P", "language" to "de")
+        val e = item("id" to "e", "title" to "E", "format" to "ebook", "language" to "FR")
+        val n = item("id" to "n", "title" to "N")
+        assertEquals(listOf("p", "n"), ids(applyFilters(listOf(p, e, n), Filters(kind = "book"))))
+        assertEquals(listOf("e"), ids(applyFilters(listOf(p, e, n), Filters(kind = "ebook"))))
+        assertEquals(listOf("e"), ids(applyFilters(listOf(p, e, n), Filters(language = "fr"))))
+        assertEquals(listOf("n"), ids(applyFilters(listOf(p, e, n), Filters(language = ""))))
+        assertEquals(listOf("de", "fr"), allLanguages(listOf(p, e, n)))
+    }
+}

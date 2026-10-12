@@ -49,7 +49,7 @@ fun findDuplicateOf(items: List<Item>, d: Item) =
 
 data class Filters(
     val q: String = "",
-    /** "all" or a kind */
+    /** "all", a kind ("book" = printed and audio books) or "ebook" */
     val kind: String = "all",
     val status: String = "all",
     /** all / owned / wish / lent / recommend / check */
@@ -60,8 +60,10 @@ data class Filters(
     /** "all", "" = no category, or a category */
     val category: String = "all",
     val minRating: Int = 0,
+    /** "all", "" = no language, or a language code */
+    val language: String = "all",
 ) {
-    val extraActive get() = listOf(status != "all", format != "all", room != "all", category != "all", minRating > 0).count { it }
+    val extraActive get() = listOf(status != "all", format != "all", room != "all", category != "all", language != "all", minRating > 0).count { it }
 }
 
 fun searchText(i: Item) =
@@ -70,7 +72,10 @@ fun searchText(i: Item) =
 fun applyFilters(items: List<Item>, f: Filters): List<Item> {
     val words = fold(f.q).split(" ").filter { it.isNotEmpty() }
     return items.filter { i ->
-        if (f.kind != "all" && i.kind != f.kind) return@filter false
+        if (f.kind == "ebook") {
+            if (i.format != "ebook") return@filter false
+        } else if (f.kind != "all" && (i.kind != f.kind || (f.kind == "book" && i.format == "ebook"))) return@filter false
+        if (f.language != "all" && (i.language ?: "").lowercase() != f.language.lowercase()) return@filter false
         if (f.status != "all" && i.status != f.status) return@filter false
         if (f.format != "all" && i.format != f.format) return@filter false
         if (f.room != "all" && (i.room ?: "") != f.room) return@filter false
@@ -170,14 +175,16 @@ fun knownPeople(items: List<Item>): List<String> =
 
 // ---------- import / export ----------
 
-fun toExport(items: List<Item>): JsonObject = objOf(
+/** [removed]: ids deleted or merged away here, so importing elsewhere removes them too. */
+fun toExport(items: List<Item>, removed: Collection<String> = emptyList()): JsonObject = objOf(
     "app" to "mybib",
     "version" to 1,
     "exportedAt" to nowIso(),
     "items" to items.map { it.toJson() },
+    "removed" to removed.toList().ifEmpty { null },
 )
 
-class ImportFile(val items: List<Item>, val updateOnly: Boolean)
+class ImportFile(val items: List<Item>, val updateOnly: Boolean, val removed: List<String> = emptyList())
 
 class ImportException(message: String) : Exception(message)
 
@@ -191,8 +198,9 @@ private infix fun JsonElement?.or(b: JsonElement?): JsonElement? = if (isNull) b
 fun parseImportFile(text: String): ImportFile {
     val data = parseJson(text)
     val list = (data as? JsonArray) ?: data.obj?.get("items").arr ?: JsonArray(emptyList())
-    if (list.isEmpty()) throw ImportException("no items")
     val top = data.obj ?: JsonObject(emptyMap())
+    val removed = top["removed"].strings
+    if (list.isEmpty() && removed.isEmpty()) throw ImportException("no items")
     val isExport = top["app"].string == "mybib"
     val items = list.mapNotNull { it.obj }.filter { it["title"].string != null }.map { x ->
         normalizeItem(x + draftOf(
@@ -201,7 +209,7 @@ fun parseImportFile(text: String): ImportFile {
             "source" to (if (isExport) x["source"] else "import"),
         ))
     }
-    return ImportFile(items, top["updateOnly"].isTrue)
+    return ImportFile(items, top["updateOnly"].isTrue, removed)
 }
 
 private val fillable = listOf("subtitle", "publisher", "year", "isbn", "language", "series", "volume", "pages", "description", "coverUrl", "category", "room", "ageFrom", "needsCheck")
@@ -221,19 +229,32 @@ fun fillEmpty(old: Item, inc: Item): Item? {
     return old.copyWith(patch + ("updatedAt" to JsonPrimitive(nowIso())))
 }
 
-data class MergeResult(val items: List<Item>, val added: Int, val updated: Int, val skipped: Int)
+data class MergeResult(val items: List<Item>, val added: Int, val updated: Int, val skipped: Int, val removed: Int = 0)
 
 /**
  * Merge imported items: same id → newer `updatedAt` wins; obvious duplicate → its empty fields
  * are filled in; otherwise added (unless [updateOnly]).
  */
-fun mergeItems(existing: List<Item>, incoming: List<Item>, updateOnly: Boolean = false): MergeResult {
-    val all = existing.toMutableList()
+fun mergeItems(
+    existing: List<Item>,
+    incoming: List<Item>,
+    updateOnly: Boolean = false,
+    removedHere: Collection<String> = emptyList(),
+    removedThere: Collection<String> = emptyList(),
+): MergeResult {
+    val gone = removedHere.toSet() + removedThere
+    val dropThere = removedThere.toSet()
+    val all = existing.filter { it.id !in dropThere }.toMutableList()
+    val removed = existing.size - all.size
     val idx = all.withIndex().associate { (k, i) -> i.id to k }.toMutableMap()
     var added = 0
     var updated = 0
     var skipped = 0
     for (inc in incoming) {
+        if (inc.id in gone) {
+            skipped++
+            continue
+        }
         val k = idx[inc.id]
         if (k != null) {
             if (inc.updatedAt > all[k].updatedAt) {
@@ -263,7 +284,7 @@ fun mergeItems(existing: List<Item>, incoming: List<Item>, updateOnly: Boolean =
         all += inc
         added++
     }
-    return MergeResult(all, added, updated, skipped)
+    return MergeResult(all, added, updated, skipped, removed)
 }
 
 private val csvColumns = listOf("kind", "title", "subtitle", "creators", "publisher", "year", "isbn", "language", "series", "volume", "format", "owned", "status", "rating", "recommend", "category", "room", "lentTo", "tags", "notes", "addedAt")
@@ -457,3 +478,6 @@ fun similarGroups(items: List<Item>, ignored: Collection<String> = emptyList(), 
         .groupBy { fold(it.title) + "\u0001" + it.kind }.values
         .filter { it.size > 1 && groupKey(it) !in skip }
 }
+
+/** Language codes used in the catalogue, sorted. */
+fun allLanguages(items: List<Item>): List<String> = items.mapNotNull { it.language?.lowercase()?.ifEmpty { null } }.distinct().sorted()

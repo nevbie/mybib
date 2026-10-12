@@ -24,7 +24,7 @@ function download(name: string, text: string, type: string) {
 
 export function SettingsView() {
   const { t, lang, setLang } = useLang()
-  const { items, settings, updateSettings, importItems, replaceAll, moveCategory } = useStore()
+  const { items, settings, updateSettings, importItems, replaceAll, moveCategory, removedIds } = useStore()
   const categories = useCategories()
   const catCount = new Map<string, number>()
   for (const i of items) if (i.category) catCount.set(i.category, (catCount.get(i.category) ?? 0) + 1)
@@ -55,8 +55,9 @@ export function SettingsView() {
   const onImport = async (f?: File) => {
     if (!f) return
     try {
-      const { items: list, updateOnly } = parseImportFile(await f.text())
-      alert(t('data.imported', await importItems(list, updateOnly)))
+      const { items: list, updateOnly, removed } = parseImportFile(await f.text())
+      const r = await importItems(list, updateOnly, removed)
+      alert(t('data.imported', r) + (r.removed ? ' ' + t('data.importRemoved', { n: r.removed }) : ''))
     } catch (e) {
       alert(t('data.importError', { e: String((e as Error).message ?? e) }))
     }
@@ -158,7 +159,7 @@ export function SettingsView() {
       <h2>{t('settings.data')}</h2>
       <p className="muted small">{t('settings.dataText', { n: items.length })}</p>
       <div className="col gap">
-        <button className="btn" onClick={() => download(`mybib-${stamp}.json`, JSON.stringify(toExport(items)), 'application/json')}>
+        <button className="btn" onClick={() => download(`mybib-${stamp}.json`, JSON.stringify(toExport(items, removedIds)), 'application/json')}>
           💾 {t('data.exportJson')}
         </button>
         <button className="btn" onClick={() => download(`mybib-${stamp}.csv`, toCSV(items), 'text/csv;charset=utf-8')}>

@@ -4,6 +4,17 @@ import { EMPTY_FILTERS, type Filters, type SortKey } from './logic/items'
 import type { ItemDraft, Kind } from './types'
 
 export type TabId = 'library' | 'add' | 'places' | 'settings'
+export type ViewMode = 'list' | 'compact' | 'grid'
+
+/** What the library looked like last time (filters, sort, view) – kept on this device. */
+const SAVED = 'mybib.ui'
+function loadSaved(): { filters?: Partial<Filters>; sort?: SortKey; view?: ViewMode } {
+  try {
+    return JSON.parse(localStorage.getItem(SAVED) ?? '{}')
+  } catch {
+    return {}
+  }
+}
 
 /** Overlays (sheets) stacked on top of the current tab. The phone's back button closes the top one. */
 export type Overlay =
@@ -26,6 +37,8 @@ interface UIValue {
   setFilters(f: Filters): void
   sort: SortKey
   setSort(s: SortKey): void
+  view: ViewMode
+  setView(v: ViewMode): void
   overlays: Overlay[]
   open(o: Overlay): void
   close(): void
@@ -48,8 +61,17 @@ function tabFromHash(): TabId {
 export function UIProvider({ children }: { children: ReactNode }) {
   const [overlays, setOverlays] = useState<Overlay[]>([])
   const [tab, setTab] = useState<TabId>(tabFromHash)
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
-  const [sort, setSort] = useState<SortKey>('title')
+  const [saved] = useState(loadSaved)
+  const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS, ...saved.filters })
+  const [sort, setSort] = useState<SortKey>(saved.sort ?? 'title')
+  const [view, setView] = useState<ViewMode>(saved.view ?? 'list')
+  useEffect(() => {
+    try {
+      localStorage.setItem(SAVED, JSON.stringify({ filters, sort, view }))
+    } catch {
+      /* private mode – just not remembered */
+    }
+  }, [filters, sort, view])
   const depth = useRef(0)
   const pending = useRef<Candidate | null>(null)
 
@@ -100,6 +122,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
     setFilters,
     sort,
     setSort,
+    view,
+    setView,
     overlays,
     open,
     close,

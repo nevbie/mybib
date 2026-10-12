@@ -13,6 +13,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -191,11 +193,19 @@ private fun hsl(h: Float, s: Float, l: Float): Color {
 
 /** Cover image with a coloured placeholder showing the kind (and title when large). */
 @Composable
-fun CoverImage(title: String, kind: String, coverUrl: String?, coverData: String? = null, large: Boolean = false) {
+fun CoverImage(
+    title: String,
+    kind: String,
+    coverUrl: String?,
+    coverData: String? = null,
+    large: Boolean = false,
+    /** replaces the fixed size, e.g. a tile filling its grid cell */
+    modifier: Modifier? = null,
+) {
     val bmp = remember(coverData) { coverBitmap(coverData) }
     val hue = remember(title) { title.fold(0) { h, c -> (h * 31 + c.code) % 360 } }
     Box(
-        Modifier.size(if (large) 110.dp else 44.dp, if (large) 160.dp else 64.dp).clip(RoundedCornerShape(4.dp)).background(hsl(hue.toFloat(), 0.45f, 0.55f)),
+        (modifier ?: Modifier.size(if (large) 110.dp else 44.dp, if (large) 160.dp else 64.dp)).clip(RoundedCornerShape(4.dp)).background(hsl(hue.toFloat(), 0.45f, 0.55f)),
         contentAlignment = Alignment.Center,
     ) {
         Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -215,7 +225,14 @@ fun CoverImage(title: String, kind: String, coverUrl: String?, coverData: String
 }
 
 @Composable
-fun CoverImage(item: Item, large: Boolean = false) = CoverImage(item.title, item.kind, item.coverUrl, item.coverData, large)
+fun CoverImage(item: Item, large: Boolean = false, modifier: Modifier? = null) = CoverImage(item.title, item.kind, item.coverUrl, item.coverData, large, modifier)
+
+/** "Lucky Luke 22", else the subtitle, else the volume – shown under the title instead of a bare number. */
+fun seriesLine(i: Item): String {
+    val series = i.series
+    if (series != null) return listOfNotNull(series, i.volume).joinToString(" ")
+    return i.subtitle ?: i.volume ?: ""
+}
 
 // ---------- small widgets ----------
 
@@ -259,34 +276,47 @@ fun Pill(text: String, color: Color? = null, outlined: Boolean = false) {
     )
 }
 
-/** One row in the library list; [selected] is non-null in selection mode. */
+/** One row in the library list; [selected] is non-null in selection mode; [compact] = one dense line. */
 @Composable
-fun ItemTile(item: Item, onClick: () -> Unit, selected: Boolean? = null, onLongClick: (() -> Unit)? = null) {
+fun ItemTile(item: Item, onClick: () -> Unit, selected: Boolean? = null, onLongClick: (() -> Unit)? = null, compact: Boolean = false) {
     val ui = LocalUi.current
     val cs = MaterialTheme.colorScheme
     val i = item
     val loan = i.openLoan
+    val sub = seriesLine(i)
     Row(
         Modifier.fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .background(if (selected == true) cs.primaryContainer.copy(alpha = 0.4f) else Color.Transparent)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp),
+        verticalAlignment = if (compact) Alignment.CenterVertically else Alignment.Top,
     ) {
         if (selected != null) {
             Icon(
                 if (selected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                 contentDescription = null,
                 tint = cs.primary,
-                modifier = Modifier.padding(top = 18.dp, end = 4.dp),
+                modifier = Modifier.padding(top = if (compact) 0.dp else 18.dp, end = 4.dp),
             )
+        }
+        if (compact) {
+            CoverImage(i, modifier = Modifier.size(30.dp, 44.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(i.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val line = listOf(sub, i.creators.joinToString(", ")).filter { it.isNotEmpty() }.joinToString(" · ")
+                if (line.isNotEmpty()) Text(line, color = cs.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (i.status != "none") Pill(ui.t("status.${i.kind}.${i.status}"), if (i.status == "done") cs.secondaryContainer else cs.tertiaryContainer)
+            if (loan != null) Text(" ↗", color = cs.primary)
+            if (i.needsCheck) Pill("?", Amber200)
+            return@Row
         }
         CoverImage(i)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(buildAnnotatedString {
-                append(i.title)
-                if (i.volume != null) withStyle(SpanStyle(color = cs.onSurfaceVariant, fontWeight = FontWeight.Normal)) { append(" · ${i.volume}") }
-            }, fontWeight = FontWeight.SemiBold)
+            Text(i.title, fontWeight = FontWeight.SemiBold)
+            if (sub.isNotEmpty()) Text(sub, color = cs.onSurfaceVariant, fontSize = 13.sp, fontStyle = FontStyle.Italic)
             if (i.creators.isNotEmpty()) Text(i.creators.joinToString(", "), color = cs.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(3.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -301,6 +331,35 @@ fun ItemTile(item: Item, onClick: () -> Unit, selected: Boolean? = null, onLongC
                 i.room?.let { Text(it, fontSize = 11.sp, color = cs.onSurfaceVariant) }
             }
         }
+    }
+}
+
+/** One cover tile in the grid view; [selected] is non-null in selection mode. */
+@Composable
+fun GridTile(item: Item, onClick: () -> Unit, selected: Boolean? = null, onLongClick: (() -> Unit)? = null) {
+    val cs = MaterialTheme.colorScheme
+    val sub = seriesLine(item)
+    Column(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(4.dp)) {
+        Box {
+            CoverImage(
+                item,
+                large = true,
+                modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)
+                    .then(if (selected == true) Modifier.border(3.dp, cs.primary, RoundedCornerShape(4.dp)) else Modifier),
+            )
+            if (selected != null) {
+                Icon(
+                    if (selected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                    contentDescription = null,
+                    tint = cs.primary,
+                    modifier = Modifier.padding(4.dp).background(cs.surface, RoundedCornerShape(4.dp)),
+                )
+            }
+            if (item.needsCheck) Box(Modifier.align(Alignment.BottomEnd).padding(4.dp)) { Pill("?", Amber200) }
+        }
+        Spacer(Modifier.height(3.dp))
+        Text(item.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
+        if (sub.isNotEmpty()) Text(sub, color = cs.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

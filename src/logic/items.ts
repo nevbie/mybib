@@ -120,7 +120,8 @@ export function findDuplicate(items: Item[], d: { isbn?: string; title: string; 
 
 export interface Filters {
   q: string
-  kind: Kind | 'all'
+  /** 'book' = printed (and audio) books, 'ebook' = e-books */
+  kind: Kind | 'all' | 'ebook'
   status: Status | 'all'
   /** owned / wishlist / lent / recommended / to check */
   scope: 'all' | 'owned' | 'wish' | 'lent' | 'recommend' | 'check'
@@ -128,10 +129,12 @@ export interface Filters {
   room: string | 'all'
   /** category id/name, '' = without category */
   category: string | 'all'
+  /** language code, '' = without language */
+  language: string | 'all'
   minRating: number
 }
 
-export const EMPTY_FILTERS: Filters = { q: '', kind: 'all', status: 'all', scope: 'all', format: 'all', room: 'all', category: 'all', minRating: 0 }
+export const EMPTY_FILTERS: Filters = { q: '', kind: 'all', status: 'all', scope: 'all', format: 'all', room: 'all', category: 'all', language: 'all', minRating: 0 }
 
 export type SortKey = 'title' | 'creator' | 'added' | 'rating' | 'year' | 'place'
 
@@ -142,7 +145,10 @@ export function searchText(i: Item): string {
 export function applyFilters(items: Item[], f: Filters): Item[] {
   const words = fold(f.q).split(' ').filter(Boolean)
   return items.filter((i) => {
-    if (f.kind !== 'all' && i.kind !== f.kind) return false
+    if (f.kind === 'ebook') {
+      if (i.format !== 'ebook') return false
+    } else if (f.kind !== 'all' && (i.kind !== f.kind || (f.kind === 'book' && i.format === 'ebook'))) return false
+    if (f.language !== undefined && f.language !== 'all' && (i.language ?? '').toLowerCase() !== f.language.toLowerCase()) return false
     if (f.status !== 'all' && i.status !== f.status) return false
     if (f.format !== 'all' && i.format !== f.format) return false
     if (f.room !== 'all' && (i.room ?? '') !== f.room) return false
@@ -229,10 +235,12 @@ export interface ExportFile {
   version: 1
   exportedAt: string
   items: Item[]
+  /** ids deleted or merged away here, so importing elsewhere removes them too */
+  removed?: string[]
 }
 
-export function toExport(items: Item[]): ExportFile {
-  return { app: 'mybib', version: 1, exportedAt: new Date().toISOString(), items }
+export function toExport(items: Item[], removed: string[] = []): ExportFile {
+  return { app: 'mybib', version: 1, exportedAt: new Date().toISOString(), items, ...(removed.length ? { removed } : {}) }
 }
 
 /**
@@ -248,10 +256,12 @@ export function parseImport(text: string): Item[] {
  * Like parseImport, plus the file's mode: `"updateOnly": true` (e.g. a category update made by
  * Claude) only completes books that are already in the catalogue and never adds new ones.
  */
-export function parseImportFile(text: string): { items: Item[]; updateOnly: boolean } {
+export function parseImportFile(text: string): { items: Item[]; updateOnly: boolean; removed: string[] } {
   const data = JSON.parse(text) as unknown
   const list: unknown[] = Array.isArray(data) ? data : Array.isArray((data as { items?: unknown }).items) ? (data as { items: unknown[] }).items : []
-  if (!list.length) throw new Error('no items')
+  const removedRaw = Array.isArray(data) ? [] : (data as { removed?: unknown }).removed
+  const removed = Array.isArray(removedRaw) ? removedRaw.filter((x): x is string => typeof x === 'string') : []
+  if (!list.length && !removed.length) throw new Error('no items')
   const top = Array.isArray(data) ? {} : (data as Record<string, unknown>)
   const isExport = top.app === 'mybib'
   const items = list
@@ -264,7 +274,7 @@ export function parseImportFile(text: string): { items: Item[]; updateOnly: bool
         source: isExport ? x.source : 'import',
       }),
     )
-  return { items, updateOnly: top.updateOnly === true }
+  return { items, updateOnly: top.updateOnly === true, removed }
 }
 
 /** Fields a later import may fill in when the book is already there but they are still empty. */
@@ -290,15 +300,30 @@ export function fillEmpty(old: Item, inc: Item): Item | null {
 /**
  * Merge imported items: same id → newer `updatedAt` wins; no id match but obvious duplicate
  * (same ISBN or same title/creator/volume/kind/format) → its empty fields are filled in;
- * otherwise added (unless `updateOnly`).
+ * otherwise added (unless `updateOnly`). Entries deleted or merged away – here (`removedHere`) or on the
+ * device the file comes from (`removedThere`) – are never brought back; the latter are deleted here too.
  */
-export function mergeItems(existing: Item[], incoming: Item[], updateOnly = false): { items: Item[]; added: number; updated: number; skipped: number } {
-  const byId = new Map(existing.map((i) => [i.id, i]))
+export function mergeItems(
+  existing: Item[],
+  incoming: Item[],
+  updateOnly = false,
+  removedHere: Iterable<string> = [],
+  removedThere: Iterable<string> = [],
+): { items: Item[]; added: number; updated: number; skipped: number; removed: number } {
+  const gone = new Set([...removedHere, ...removedThere])
+  const dropThere = new Set(removedThere)
+  const kept = existing.filter((i) => !dropThere.has(i.id))
+  const removed = existing.length - kept.length
+  const byId = new Map(kept.map((i) => [i.id, i]))
   let added = 0
   let updated = 0
   let skipped = 0
-  const all = [...existing]
+  const all = [...kept]
   for (const inc of incoming) {
+    if (gone.has(inc.id)) {
+      skipped++
+      continue
+    }
     const old = byId.get(inc.id)
     if (old) {
       if (inc.updatedAt > old.updatedAt) {
@@ -326,7 +351,7 @@ export function mergeItems(existing: Item[], incoming: Item[], updateOnly = fals
     byId.set(inc.id, inc)
     added++
   }
-  return { items: all, added, updated, skipped }
+  return { items: all, added, updated, skipped, removed }
 }
 
 const CSV_COLUMNS: (keyof Item | 'lentTo')[] = [
@@ -528,4 +553,9 @@ export function similarGroups(items: Item[], ignored: string[] = [], exclude: Se
   }
   const skip = new Set(ignored)
   return [...byTitle.values()].filter((g) => g.length > 1 && !skip.has(groupKey(g)))
+}
+
+/** Language codes used in the catalogue, sorted. */
+export function allLanguages(items: Item[]): string[] {
+  return [...new Set(items.map((i) => i.language?.toLowerCase()).filter((l): l is string => !!l))].sort()
 }

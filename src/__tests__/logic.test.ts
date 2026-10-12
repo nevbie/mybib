@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { classifyCode, isbn10to13, isValidEan13, isValidIsbn10 } from '../logic/isbn'
-import { applyFilters, completionPatch, differingFields, duplicateGroups, mergeWithChoices, similarGroups, EMPTY_FILTERS, findDuplicate, findMatch, groupKey, mergeGroup, fold, mergeItems, normalizeItem, parseImport, sortItems, summarizePlaces, titleKey, toCSV, toExport } from '../logic/items'
+import { applyFilters, completionPatch, differingFields, duplicateGroups, mergeWithChoices, similarGroups, EMPTY_FILTERS, findDuplicate, findMatch, groupKey, mergeGroup, fold, mergeItems, normalizeItem, parseImport, parseImportFile, sortItems, summarizePlaces, titleKey, toCSV, toExport } from '../logic/items'
 import { matchScore } from '../logic/lookup'
 import { toDraft } from '../logic/recognized'
 
@@ -214,5 +214,27 @@ describe('merging by hand', () => {
     expect(keep.id).toBe('b')
     expect(remove).toEqual(['a'])
     expect(keep).toMatchObject({ coverData: 'data:image/jpeg;base64,A', volume: '62', creators: ['Morris', 'Goscinny'], room: 'Wohnzimmer', rating: 3 })
+  })
+})
+
+describe('deleted and merged entries stay gone', () => {
+  const mk = (d: Record<string, unknown>) => normalizeItem({ title: 'x', ...d })
+  const a = mk({ id: 'a', title: 'Western Circus', volume: '22' })
+  const b = mk({ id: 'b', title: 'Western Circus', volume: '62' })
+  const c = mk({ id: 'c', title: 'Momo' })
+  it('does not bring back entries removed here', () => {
+    const r = mergeItems([b, c], [a, b, c], false, ['a'])
+    expect(r.items.map((i) => i.id)).toEqual(['b', 'c'])
+    expect(r.added).toBe(0)
+  })
+  it('removes entries the file says were removed elsewhere', () => {
+    const r = mergeItems([a, b, c], [b, c], false, [], ['a'])
+    expect(r.items.map((i) => i.id)).toEqual(['b', 'c'])
+    expect(r.removed).toBe(1)
+  })
+  it('writes and reads the removed list', () => {
+    const file = JSON.stringify(toExport([b], ['a']))
+    expect(parseImportFile(file).removed).toEqual(['a'])
+    expect(parseImportFile(JSON.stringify(toExport([b]))).removed).toEqual([])
   })
 })
