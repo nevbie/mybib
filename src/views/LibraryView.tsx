@@ -1,15 +1,21 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CategorySelect } from '../components/CategorySelect'
 import { ItemRow } from '../components/ItemRow'
 import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
-import { applyFilters, EMPTY_FILTERS, openLoan, sortItems, type Filters, type SortKey } from '../logic/items'
+import { allLanguages, applyFilters, EMPTY_FILTERS, openLoan, sortItems, type Filters, type SortKey } from '../logic/items'
 import { useStore } from '../store'
 import { FORMATS, KINDS, STATUSES } from '../types'
-import { useUI } from '../ui'
+import { useUI, type ViewMode } from '../ui'
 
 const SCOPES: Filters['scope'][] = ['all', 'wish', 'lent', 'recommend', 'check']
 const SORTS: SortKey[] = ['title', 'creator', 'added', 'rating', 'year', 'place']
+const VIEWS: [ViewMode, string][] = [
+  ['list', '☰'],
+  ['compact', '≡'],
+  ['grid', '▦'],
+]
+const SCROLL = 'mybib.scroll'
 /** render in pages so a 2 000-item library stays smooth */
 const PAGE = 120
 
@@ -24,6 +30,37 @@ export function LibraryView() {
   /** bulk edit: null = normal mode, otherwise the selected ids */
   const [sel, setSel] = useState<Set<string> | null>(null)
   const rooms = useRooms()
+  const languages = useMemo(() => allLanguages(items), [items])
+  const labelKind = f.kind === 'all' || f.kind === 'ebook' ? 'book' : f.kind
+  const [scrolled, setScrolled] = useState(false)
+
+  // back where you were: restore the scroll position once the catalogue is loaded, keep it up to date
+  const restored = useRef(false)
+  useEffect(() => {
+    if (!ready || restored.current) return
+    restored.current = true
+    const y = Number(sessionStorage.getItem(SCROLL) ?? localStorage.getItem(SCROLL) ?? 0)
+    if (y > 0) {
+      setLimit((l) => Math.max(l, Math.ceil(y / 60) + PAGE))
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)))
+    }
+  }, [ready])
+  useEffect(() => {
+    let t = 0
+    const onScroll = () => {
+      setScrolled(window.scrollY > 800)
+      window.clearTimeout(t)
+      t = window.setTimeout(() => {
+        try {
+          localStorage.setItem(SCROLL, String(Math.round(window.scrollY)))
+        } catch {
+          /* not remembered */
+        }
+      }, 300)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   const list = useMemo(() => sortItems(applyFilters(items, f), ui.sort, lang), [items, f, ui.sort, lang])
   const counts = useMemo(
@@ -49,7 +86,7 @@ export function LibraryView() {
     ui.open({ type: 'merge', ids: selected })
     setSel(null)
   }
-  const extraActive = [f.status !== 'all', f.format !== 'all', f.room !== 'all', f.category !== 'all', f.minRating > 0].filter(Boolean).length
+  const extraActive = [f.status !== 'all', f.format !== 'all', f.room !== 'all', f.category !== 'all', (f.language ?? 'all') !== 'all', f.minRating > 0].filter(Boolean).length
 
   return (
     <div className="page">
@@ -65,9 +102,9 @@ export function LibraryView() {
         <button className={f.kind === 'all' ? 'chip on' : 'chip'} onClick={() => set({ kind: 'all' })}>
           {t('kind.all')}
         </button>
-        {KINDS.map((k) => (
+        {KINDS.flatMap((k) => (k === 'book' ? (['book', 'ebook'] as const) : [k])).map((k) => (
           <button key={k} className={f.kind === k ? 'chip on' : 'chip'} onClick={() => set({ kind: f.kind === k ? 'all' : k })}>
-            {t(`kind.${k}.pl`)}
+            {k === 'ebook' ? t('lib.ebooks') : t(`kind.${k}.pl`)}
           </button>
         ))}
       </div>
@@ -92,7 +129,7 @@ export function LibraryView() {
               <option value="all">{t('any')}</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {t(`status.${f.kind === 'all' ? 'book' : f.kind}.${s}`)}
+                  {t(`status.${labelKind}.${s}`)}
                 </option>
               ))}
             </select>
@@ -135,16 +172,20 @@ export function LibraryView() {
               ))}
             </select>
           </label>
-          <label>
-            {t('lib.sort')}
-            <select value={ui.sort} onChange={(e) => ui.setSort(e.target.value as SortKey)}>
-              {SORTS.map((s) => (
-                <option key={s} value={s}>
-                  {t(`sort.${s}`)}
-                </option>
-              ))}
-            </select>
-          </label>
+          {languages.length > 0 && (
+            <label>
+              {t('lib.language')}
+              <select value={f.language ?? 'all'} onChange={(e) => set({ language: e.target.value })}>
+                <option value="all">{t('any')}</option>
+                {languages.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+                <option value="">{t('lib.noLanguage')}</option>
+              </select>
+            </label>
+          )}
           <button className="btn ghost" onClick={() => ui.setFilters({ ...EMPTY_FILTERS })}>
             {t('lib.reset')}
           </button>
@@ -177,8 +218,22 @@ export function LibraryView() {
               </button>
             </div>
           ) : (
-            <div className="row between center">
+            <div className="toolbar">
               <span className="muted small">{list.length !== items.length ? t('lib.shown', { n: list.length }) : ''}</span>
+              <select className="toolbar-sort" value={ui.sort} onChange={(e) => ui.setSort(e.target.value as SortKey)} aria-label={t('lib.sort')}>
+                {SORTS.map((s) => (
+                  <option key={s} value={s}>
+                    ↕ {t(`sort.${s}`)}
+                  </option>
+                ))}
+              </select>
+              <span className="seg" role="group" aria-label={t('lib.view')}>
+                {VIEWS.map(([v, icon]) => (
+                  <button key={v} className={ui.view === v ? 'on' : ''} onClick={() => ui.setView(v)} aria-label={t(`lib.view.${v}`)} title={t(`lib.view.${v}`)}>
+                    {icon}
+                  </button>
+                ))}
+              </span>
               {list.length > 0 && (
                 <button className="link small" onClick={() => setSel(new Set())}>
                   ☑ {t('sel.start')}
@@ -186,9 +241,16 @@ export function LibraryView() {
               )}
             </div>
           )}
-          <div className="list">
+          <div className={ui.view === 'grid' ? 'tiles' : 'list'}>
             {list.slice(0, limit).map((i) => (
-              <ItemRow key={i.id} item={i} selected={sel ? sel.has(i.id) : undefined} onClick={() => (sel ? toggle(i.id) : ui.openItem(i.id))} />
+              <ItemRow
+                key={i.id}
+                item={i}
+                view={ui.view}
+                selected={sel ? sel.has(i.id) : undefined}
+                onClick={() => (sel ? toggle(i.id) : ui.openItem(i.id))}
+                onLongPress={() => setSel((s) => new Set([...(s ?? []), i.id]))}
+              />
             ))}
           </div>
           {list.length > limit && (
@@ -197,6 +259,11 @@ export function LibraryView() {
             </button>
           )}
           {list.length === 0 && <p className="empty muted">{t('lib.noMatch')}</p>}
+          {scrolled && (
+            <button className="fab-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label={t('lib.top')} title={t('lib.top')}>
+              ↑
+            </button>
+          )}
         </>
       )}
     </div>
