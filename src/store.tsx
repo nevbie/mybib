@@ -13,7 +13,9 @@ interface StoreValue {
   removeItems(ids: string[]): void
   /** Replace each kept entry by its merged version and delete the rest (duplicate merging). */
   applyMerges(merges: { keep: Item; remove: string[] }[]): void
-  importItems(items: Item[], updateOnly?: boolean): Promise<{ added: number; updated: number; skipped: number }>
+  importItems(items: Item[], updateOnly?: boolean, removedThere?: string[]): Promise<{ added: number; updated: number; skipped: number; removed: number }>
+  /** ids deleted or merged away on this device – kept so imports don't bring them back */
+  removedIds: string[]
   /** Rename a category on all items ('' removes it). */
   moveCategory(from: string, to: string): void
   replaceAll(items: Item[]): Promise<void>
@@ -30,12 +32,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Item[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [ready, setReady] = useState(false)
+  const [removedIds, setRemovedIds] = useState<string[]>([])
   const itemsRef = useRef(items)
+  const removedRef = useRef<string[]>([])
   itemsRef.current = items
 
   useEffect(() => {
-    Promise.all([db.loadItems(), db.getKV<Partial<Settings>>('settings')])
-      .then(([stored, s]) => {
+    Promise.all([db.loadItems(), db.getKV<Partial<Settings>>('settings'), db.getKV<string[]>('removed')])
+      .then(([stored, s, removed]) => {
+        removedRef.current = removed ?? []
+        setRemovedIds(removedRef.current)
         // bring older data up to date (e.g. shelves → rooms) and save it once
         const list = stored.map((i) => normalizeItem(i))
         const changed = list.filter((i, n) => JSON.stringify(i) !== JSON.stringify(stored[n]))
@@ -73,32 +79,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [persist],
   )
 
+  /** Remember deleted ids (tombstones), so a later import of an older backup doesn't bring them back. */
+  const remember = useCallback((ids: string[]) => {
+    if (!ids.length) return
+    removedRef.current = [...new Set([...removedRef.current, ...ids])]
+    setRemovedIds(removedRef.current)
+    db.setKV('removed', removedRef.current).catch(() => {})
+  }, [])
+
   const removeItems = useCallback((ids: string[]) => {
+    remember(ids)
     const set = new Set(ids)
     setItems((s) => s.filter((i) => !set.has(i.id)))
     db.deleteItems(ids).catch((e) => alert(String(e)))
-  }, [])
+  }, [remember])
 
   const applyMerges = useCallback(
     (merges: { keep: Item; remove: string[] }[]) => {
       const now = new Date().toISOString()
       const kept = new Map(merges.map((m) => [m.keep.id, normalizeItem({ ...m.keep, updatedAt: now })]))
       const gone = new Set(merges.flatMap((m) => m.remove))
+      remember([...gone])
       setItems(itemsRef.current.filter((i) => !gone.has(i.id)).map((i) => kept.get(i.id) ?? i))
       persist([...kept.values()])
       db.deleteItems([...gone]).catch((e) => alert(String(e)))
     },
-    [persist],
+    [persist, remember],
   )
 
-  const importItems = useCallback(async (incoming: Item[], updateOnly = false) => {
-    const r = mergeItems(itemsRef.current, incoming, updateOnly)
+  const importItems = useCallback(async (incoming: Item[], updateOnly = false, removedThere: string[] = []) => {
+    const r = mergeItems(itemsRef.current, incoming, updateOnly, removedRef.current, removedThere)
+    const keep = new Set(r.items.map((i) => i.id))
+    const dropped = itemsRef.current.filter((i) => !keep.has(i.id)).map((i) => i.id)
     setItems(r.items)
     await db.putItems(r.items)
-    return { added: r.added, updated: r.updated, skipped: r.skipped }
-  }, [])
+    if (dropped.length) {
+      await db.deleteItems(dropped)
+      remember(dropped)
+    }
+    return { added: r.added, updated: r.updated, skipped: r.skipped, removed: r.removed }
+  }, [remember])
 
+  /** Start over (wipe) or restore: also forgets deleted ids, so a backup can bring everything back. */
   const replaceAll = useCallback(async (list: Item[]) => {
+    removedRef.current = []
+    setRemovedIds([])
+    await db.setKV('removed', [])
     await db.clearItems()
     await db.putItems(list)
     setItems(list)
@@ -147,7 +173,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
 
-  const value: StoreValue = { ready, items, byId, settings, addItems, updateItem, removeItems, applyMerges, importItems, replaceAll, updateItems, moveRoom, moveCategory, updateSettings }
+  const value: StoreValue = { ready, items, byId, settings, addItems, updateItem, removeItems, applyMerges, importItems, removedIds, replaceAll, updateItems, moveRoom, moveCategory, updateSettings }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

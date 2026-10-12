@@ -20,9 +20,9 @@ export function AddView() {
   const onImport = async (f?: File) => {
     if (!f) return
     try {
-      const { items, updateOnly } = parseImportFile(await f.text())
-      const r = await importItems(items, updateOnly)
-      alert(t('data.imported', r))
+      const { items, updateOnly, removed } = parseImportFile(await f.text())
+      const r = await importItems(items, updateOnly, removed)
+      alert(t('data.imported', r) + (r.removed ? ' ' + t('data.importRemoved', { n: r.removed }) : ''))
     } catch (e) {
       alert(t('data.importError', { e: String((e as Error).message ?? e) }))
     }
