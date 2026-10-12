@@ -46,6 +46,20 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
   const abortRef = useRef<AbortController | null>(null)
   const hasKey = !!settings.claudeKey
 
+  /** Keep the screen on while Claude reads – a locked phone pauses the page and the recognition with it. */
+  const wake = useRef<{ release(): Promise<void> } | null>(null)
+  const keepAwake = async (on: boolean) => {
+    try {
+      if (on) wake.current = (await (navigator as unknown as { wakeLock?: { request(t: 'screen'): Promise<{ release(): Promise<void> }> } }).wakeLock?.request('screen')) ?? null
+      else {
+        await wake.current?.release()
+        wake.current = null
+      }
+    } catch {
+      /* not supported */
+    }
+  }
+
   const errorText = (e: unknown) => {
     if (e instanceof RecognizeError) return t(`ai.err.${e.code}`) + (e.code === 'other' || e.code === 'parse' ? ` (${e.message})` : '')
     return String(e)
@@ -63,6 +77,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
     const list = [...files]
     if (mode === 'cover') return onCovers(list)
     setBusy(true)
+    keepAwake(true)
     abortRef.current = new AbortController()
     try {
       for (let i = 0; i < list.length; i++) {
@@ -86,6 +101,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
     } finally {
       setStatus('')
       setBusy(false)
+      keepAwake(false)
     }
   }
 
@@ -96,6 +112,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
    */
   const onCovers = async (list: File[]) => {
     setBusy(true)
+    keepAwake(true)
     abortRef.current = new AbortController()
     try {
       for (let i = 0; i < list.length; i++) {
@@ -132,6 +149,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
     } finally {
       setStatus('')
       setBusy(false)
+      keepAwake(false)
     }
   }
 
