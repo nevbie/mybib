@@ -63,6 +63,9 @@ data class Item(
     val coverUrl: String? = null,
     /** own photo, downscaled JPEG data URL – wins over coverUrl */
     val coverData: String? = null,
+
+    /** own photo of the spine (downscaled JPEG data URL) – for the shelf view */
+    val spineData: String? = null,
     val tags: List<String> = emptyList(),
     /** one main category: a default id (see Categories.kt) or an own name */
     val category: String? = null,
@@ -109,6 +112,7 @@ data class Item(
         "description" to description,
         "coverUrl" to coverUrl,
         "coverData" to coverData,
+        "spineData" to spineData,
         "tags" to tags,
         "category" to category,
         "format" to format,
@@ -205,6 +209,7 @@ fun normalizeItem(r: Draft, now: String? = null): Item {
         description = str(r["description"]),
         coverUrl = str(r["coverUrl"]),
         coverData = coverData?.takeIf { it.startsWith("data:image/") },
+        spineData = r["spineData"].string?.takeIf { it.startsWith("data:image/") },
         tags = strList(r["tags"]),
         category = toCategory(str(r["category"])),
         format = oneOf(formats, r["format"], "physical"),

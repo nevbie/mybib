@@ -1,8 +1,22 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package app.mybib.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import app.mybib.core.Item
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -13,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Reorder
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.SmallFloatingActionButton
@@ -207,6 +222,14 @@ fun LibraryScreen() {
             } else {
                 LazyColumn(state = vm.libraryList, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
                     item { Header() }
+                    if (vm.view == "shelf") {
+                        // shelf view: the spines side by side, one shelf per room
+                        val rooms = list.groupBy { it.room ?: "" }.entries.toList()
+                        items(rooms, key = { "room:" + it.key }) { (room, group) ->
+                            Shelf(room.ifEmpty { ui.t("places.none") }, group, sel, { open(it) }, { longPress(it) })
+                        }
+                        return@LazyColumn
+                    }
                     items(list, key = { it.id }) { item ->
                         ItemTile(
                             item = item,
@@ -248,7 +271,7 @@ private fun Toolbar(shown: Int, total: Int) {
                 }
             }
         }
-        for ((v, icon) in listOf("list" to Icons.AutoMirrored.Filled.List, "compact" to Icons.Filled.Reorder, "grid" to Icons.Filled.GridView)) {
+        for ((v, icon) in listOf("list" to Icons.AutoMirrored.Filled.List, "compact" to Icons.Filled.Reorder, "grid" to Icons.Filled.GridView, "shelf" to Icons.Filled.ViewColumn)) {
             IconButton(onClick = { vm.view = v }, modifier = Modifier.size(36.dp)) {
                 Icon(icon, contentDescription = ui.t("lib.view.$v"), tint = if (vm.view == v) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -301,6 +324,52 @@ private fun FilterPanel(f: Filters) {
                 )
             }
             TextButton(onClick = { set(Filters()) }, modifier = Modifier.align(Alignment.End)) { Text(ui.t("lib.reset")) }
+        }
+    }
+}
+
+/** One room as a shelf: the spines side by side – the own spine photo, else a coloured strip with the title. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Shelf(room: String, group: List<Item>, sel: Set<String>?, onClick: (String) -> Unit, onLongClick: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(room, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        FlowRow(
+            Modifier.fillMaxWidth().drawBehind {
+                // the shelf board under each row of spines
+                drawRect(Color(0xFFA47551), topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 8.dp.toPx()), size = androidx.compose.ui.geometry.Size(size.width, 8.dp.toPx()))
+            }.padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            for (i in group) Spine(i, sel?.contains(i.id), { onClick(i.id) }, { onLongClick(i.id) })
+        }
+    }
+}
+
+@Composable
+private fun Spine(item: Item, selected: Boolean?, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val bmp = remember(item.spineData) { coverBitmap(item.spineData) }
+    val hue = remember(item.title) { item.title.fold(0) { h, c -> (h * 31 + c.code) % 360 } }
+    val border = if (selected == true) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)) else Modifier
+    val m = Modifier.height(150.dp).then(border).combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    if (bmp != null) {
+        Image(bmp, contentDescription = item.title, contentScale = ContentScale.FillHeight, modifier = m.widthIn(min = 14.dp, max = 70.dp).clip(RoundedCornerShape(2.dp)))
+    } else {
+        Box(
+            m.width(28.dp).clip(RoundedCornerShape(2.dp)).background(Color.hsl(hue.toFloat(), 0.4f, 0.45f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                item.title,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.requiredWidth(140.dp).rotate(-90f),
+            )
         }
     }
 }

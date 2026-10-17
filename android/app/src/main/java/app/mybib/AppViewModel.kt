@@ -35,8 +35,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var filters by mutableStateOf(filtersFrom(saved.optJSONObject("filters")))
     var sort by mutableStateOf(saved.optString("sort", "title"))
 
-    /** "list", "compact" or "grid" */
-    var view by mutableStateOf(saved.optString("view", "list").takeIf { it in listOf("list", "compact", "grid") } ?: "list")
+    /** "list", "compact", "grid" or "shelf" */
+    var view by mutableStateOf(saved.optString("view", "list").takeIf { it in listOf("list", "compact", "grid", "shelf") } ?: "list")
     var keepScreenOn by mutableStateOf(false)
 
     // library state kept while other tabs or screens are shown

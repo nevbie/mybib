@@ -1,6 +1,8 @@
 package app.mybib.ui
 
 import android.net.Uri
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -49,6 +51,9 @@ class CoversState {
     var list by mutableStateOf<List<String>?>(null)
     var target by mutableStateOf<String?>(null)
     var busy by mutableStateOf("")
+
+    /** "coverData" or "spineData" (spine photos for the shelf view) */
+    var field by mutableStateOf("coverData")
 }
 
 /**
@@ -66,19 +71,21 @@ fun CoversScreen(screen: Screen.Covers) {
 
     // the list is fixed when the screen opens (and when the room changes), so entries don't vanish once they got a cover
     fun build(): List<String> {
-        val base = screen.ids?.mapNotNull { ui.byId(it) } ?: ui.items.filter { it.coverData == null && it.coverUrl == null }
+        val base = screen.ids?.mapNotNull { ui.byId(it) }
+            ?: ui.items.filter { if (st.field == "coverData") it.coverData == null && it.coverUrl == null else it.spineData == null }
         return sortItems(base.filter { st.room == "all" || (it.room ?: "") == st.room }, "place").map { it.id }
     }
     val list = st.list ?: build().also { st.list = it }
     val live = list.mapNotNull { ui.byId(it) }
-    val missing = live.filter { it.coverData == null }
+    fun has(i: app.mybib.core.Item) = if (st.field == "coverData") i.coverData != null else i.spineData != null
+    val missing = live.filter { !has(it) }
 
     suspend fun save(id: String, uri: Uri) {
         val data = withContext(Dispatchers.IO) { coverDataUrl(ctx.applicationContext, uri) } ?: return
-        vm.store.updateItem(id, "coverData" to data)
+        vm.store.updateItem(id, st.field to data)
     }
 
-    val one = rememberPhotoPicker(pendingKey = { st.target?.let { "cover:$it" } }) { uris ->
+    val one = rememberPhotoPicker(pendingKey = { st.target?.let { (if (st.field == "coverData") "cover:" else "spine:") + it } }) { uris ->
         val id = st.target ?: return@rememberPhotoPicker
         vm.viewModelScope.launch {
             st.busy = ui.t("covers.saving")
@@ -105,6 +112,14 @@ fun CoversScreen(screen: Screen.Covers) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Small(ui.t("covers.intro"))
+                    Segmented(
+                        listOf("coverData" to "📕 ${ui.t("covers.modeCover")}", "spineData" to "📚 ${ui.t("covers.modeSpine")}"),
+                        st.field,
+                        {
+                            st.field = it
+                            st.list = null
+                        },
+                    )
                     if (screen.ids == null) {
                         Dropdown(
                             ui.t("field.room"), st.room,
@@ -115,7 +130,7 @@ fun CoversScreen(screen: Screen.Covers) {
                             },
                         )
                     }
-                    Text(ui.t("covers.left", "n" to missing.size, "total" to live.size), fontWeight = FontWeight.Bold)
+                    Text(ui.t(if (st.field == "coverData") "covers.left" else "covers.leftSpine", "n" to missing.size, "total" to live.size), fontWeight = FontWeight.Bold)
                     Button(onClick = many.gallery, enabled = missing.isNotEmpty() && st.busy.isEmpty(), modifier = Modifier.fillMaxWidth()) {
                         Text("🖼 ${ui.t("covers.many")}")
                     }
@@ -127,19 +142,20 @@ fun CoversScreen(screen: Screen.Covers) {
                             Text(st.busy)
                         }
                     }
-                    if (live.isEmpty()) Small(ui.t("covers.none"))
+                    if (live.isEmpty()) Small(ui.t(if (st.field == "coverData") "covers.none" else "covers.noneSpine"))
                 }
             }
             items(live, key = { it.id }) { i ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CoverImage(i)
+                    val spineBmp = if (st.field == "spineData") coverBitmap(i.spineData) else null
+                    if (spineBmp != null) Image(spineBmp, contentDescription = null, modifier = Modifier.height(64.dp)) else CoverImage(i)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(listOfNotNull(i.title, i.volume).joinToString(" · "), fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         if (i.creators.isNotEmpty()) Text(i.creators.joinToString(", "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         i.room?.let { Small(it) }
                     }
-                    if (i.coverData != null) Icon(Icons.Filled.Check, contentDescription = ui.t("covers.done"), tint = MaterialTheme.colorScheme.primary)
+                    if (has(i)) Icon(Icons.Filled.Check, contentDescription = ui.t("covers.done"), tint = MaterialTheme.colorScheme.primary)
                     IconButton(onClick = {
                         st.target = i.id
                         one.camera()

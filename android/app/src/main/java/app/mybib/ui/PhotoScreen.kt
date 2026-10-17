@@ -136,11 +136,14 @@ fun PhotoScreen(screen: Screen.Photo) {
             st.status = ui.t("ai.reading", "i" to n + 1, "n" to photos.size)
             try {
                 val jpeg = withContext(Dispatchers.IO) { loadJpeg(ctx, uri, 2400, 88) } ?: continue
+                // every spine is cut out as its own photo (shelf view); books already there are completed instead
                 for (f in recognize(jpeg)) {
-                    val draft = f.toDraft()
-                    val dup = findDuplicateOf(vm.store.items.value, normalizeItem(draft))?.title
-                        ?: st.rows.firstOrNull { it.title == f.title && it.base["volume"] == draft["volume"] }?.title
-                    st.rows.add(PhotoRow(draft, f.confidence, f.remark, dup == null, dup))
+                    val box = f.box
+                    val spine = if (box != null) withContext(Dispatchers.Default) { cropCover(jpeg, box) } else null
+                    val draft = f.toDraft() + (if (spine != null) draftOf("spineData" to spine) else emptyMap())
+                    val match = findMatchOf(vm.store.items.value, draft)
+                    val twice = st.rows.firstOrNull { it.title == f.title && it.base["volume"] == draft["volume"] }?.title
+                    st.rows.add(PhotoRow(draft, f.confidence, f.remark, twice == null, twice, match))
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -269,6 +272,7 @@ fun PhotoScreen(screen: Screen.Photo) {
                     if (!shelf) Small(if (hasKey) ui.t("ai.coverHint") else ui.t("ai.coverNoKey"))
                     if (!shelf) Small(ui.t("ai.coversMany"))
                     if (shelf && hasKey) Small(ui.t("ai.shelfHint"))
+                    if (shelf && hasKey) Small(ui.t("spine.shelfHint"))
                     SuggestField(room, ui.rooms, ui.t("field.room"), { st.room = it.trim() })
                     if (hasKey) {
                         OutlinedTextField(st.hint, { st.hint = it }, label = { Text(ui.t("ai.hintPh")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -310,7 +314,7 @@ private fun RowCard(r: PhotoRow) {
     Card(Modifier.fillMaxWidth().alpha(if (r.selected) 1f else 0.5f)) {
         Row(Modifier.padding(start = 4.dp, top = 4.dp, end = 12.dp, bottom = 8.dp)) {
             Checkbox(checked = r.selected, onCheckedChange = { r.selected = it })
-            coverBitmap(r.base["coverData"].string)?.let {
+            coverBitmap(r.base["coverData"].string ?: r.base["spineData"].string)?.let {
                 Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.padding(top = 10.dp, end = 10.dp).size(44.dp, 64.dp).clip(RoundedCornerShape(4.dp)))
             }
             Column(Modifier.weight(1f).padding(top = 12.dp)) {

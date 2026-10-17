@@ -140,7 +140,7 @@ private fun clearPendingPhoto(ctx: Context) = ctx.getSharedPreferences(PENDING, 
 
 /**
  * If Android closed the app while the camera was open (low memory), the photo result never arrives.
- * The picker notes what the photo was for ("cover:<item id>"); on the next start this saves it as that cover.
+ * The picker notes what the photo was for ("cover:<item id>" or "spine:<item id>"); on the next start this saves it there.
  */
 fun applyPendingPhoto(ctx: Context, store: Store) {
     val p = ctx.getSharedPreferences(PENDING, Context.MODE_PRIVATE)
@@ -148,11 +148,16 @@ fun applyPendingPhoto(ctx: Context, store: Store) {
     val path = p.getString("path", null)
     p.edit().clear().apply()
     val file = path?.let(::File) ?: return
-    if (!key.startsWith("cover:") || !file.exists() || file.length() == 0L) return
-    val id = key.removePrefix("cover:")
+    val field = when {
+        key.startsWith("cover:") -> "coverData"
+        key.startsWith("spine:") -> "spineData"
+        else -> return
+    }
+    if (!file.exists() || file.length() == 0L) return
+    val id = key.substringAfter(':')
     if (store.byId(id) == null) return
     val data = coverDataUrl(ctx, Uri.fromFile(file)) ?: return
-    store.updateItem(id, "coverData" to data)
+    store.updateItem(id, field to data)
 }
 
 class PhotoPicker(val camera: () -> Unit, val gallery: () -> Unit)

@@ -79,6 +79,7 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
     val labelKind = if (kindsUsed.size == 1) kindsUsed.first() else "book"
     val withOwn = items.count { it.coverData != null }
     val withOnline = items.count { it.coverUrl != null }
+    val withSpine = items.count { it.spineData != null }
     val allTags = items.flatMap { it.tags }.toSet().sorted()
     val un = Opt(UNCHANGED, ui.t("bulkEdit.unchanged"))
     val changes = listOf(
@@ -93,6 +94,7 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
             val affected = when (cover) {
                 "own" -> withOwn
                 "online" -> withOnline
+                "spine" -> withSpine
                 else -> n
             }
             if (!vm.dialogs.confirm(ui.t("bulkEdit.coverConfirm", "n" to affected))) return@launch
@@ -112,6 +114,7 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
         if (checked) patch["needsCheck"] = false
         if (cover == "own" || cover == "all") patch["coverData"] = null
         if (cover == "online" || cover == "all") patch["coverUrl"] = null
+        if (cover == "spine") patch["spineData"] = null
         val tag = addTag.trim()
         val rm = removeTag
         vm.store.updateItems(live) { i ->
@@ -186,7 +189,8 @@ fun BulkEditSheet(ids: List<String>, onDismiss: () -> Unit) {
                     listOf(un) +
                         (if (withOwn > 0) listOf(Opt("own", ui.t("bulkEdit.coverOwn", "n" to withOwn))) else emptyList()) +
                         (if (withOnline > 0) listOf(Opt("online", ui.t("bulkEdit.coverOnline", "n" to withOnline))) else emptyList()) +
-                        (if (withOwn + withOnline > 0) listOf(Opt("all", ui.t("bulkEdit.coverAll"))) else emptyList()),
+                        (if (withOwn + withOnline > 0) listOf(Opt("all", ui.t("bulkEdit.coverAll"))) else emptyList()) +
+                        (if (withSpine > 0) listOf(Opt("spine", ui.t("bulkEdit.coverSpine", "n" to withSpine))) else emptyList()),
                     { cover = it },
                 )
                 Row(Modifier.fillMaxWidth().clickable { checked = !checked }, verticalAlignment = Alignment.CenterVertically) {

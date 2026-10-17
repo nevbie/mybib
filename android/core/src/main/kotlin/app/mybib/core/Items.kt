@@ -373,7 +373,7 @@ private val statusRank = mapOf("none" to 0, "want" to 1, "active" to 2, "done" t
 
 /** How much is filled in – the most complete entry of a group is kept when merging. */
 private fun completeness(i: Item): Int =
-    listOf(i.subtitle, i.publisher, i.year, i.isbn, i.language, i.series, i.volume, i.pages, i.description, i.coverUrl, i.coverData, i.category, i.room, i.notes)
+    listOf(i.subtitle, i.publisher, i.year, i.isbn, i.language, i.series, i.volume, i.pages, i.description, i.coverUrl, i.coverData, i.spineData, i.category, i.room, i.notes)
         .count { it != null && it != "" } + i.creators.size + i.tags.size + i.loans.size + (if (i.rating > 0) 1 else 0)
 
 class GroupMerge(val keep: Item, val remove: List<String>)
@@ -390,6 +390,7 @@ fun mergeGroup(group: List<Item>): GroupMerge {
     val notes = sorted.mapNotNull { it.notes?.trim()?.ifEmpty { null } }.distinct()
     keep = keep.copy(
         coverData = keep.coverData ?: sorted.firstNotNullOfOrNull { it.coverData },
+        spineData = keep.spineData ?: sorted.firstNotNullOfOrNull { it.spineData },
         creators = keep.creators.ifEmpty { sorted.firstOrNull { it.creators.isNotEmpty() }?.creators ?: emptyList() },
         rating = sorted.maxOf { it.rating },
         status = sorted.map { it.status }.reduce { a, b -> if ((statusRank[b] ?: 0) > (statusRank[a] ?: 0)) b else a },
@@ -435,15 +436,17 @@ fun completionPatch(old: Item, d: Draft): Draft {
     }
     if (old.creators.isEmpty() && d["creators"].strings.isNotEmpty()) patch["creators"] = d["creators"]!!
     if (old.coverData == null && !d["coverData"].isBlankValue()) patch["coverData"] = d["coverData"]!!
+    if (old.spineData == null && !d["spineData"].isBlankValue()) patch["spineData"] = d["spineData"]!!
     return patch
 }
 
 /** Fields offered for choice when merging by hand (cover = own photo and online cover together). */
-val mergeFields = listOf("cover", "title", "subtitle", "creators", "series", "volume", "publisher", "year", "isbn", "language", "pages", "kind", "format", "category", "room", "description", "status", "rating")
+val mergeFields = listOf("cover", "spine", "title", "subtitle", "creators", "series", "volume", "publisher", "year", "isbn", "language", "pages", "kind", "format", "category", "room", "description", "status", "rating")
 
 /** Value of a merge field, for comparing and showing; "" when empty. */
 fun mergeValue(i: Item, f: String): String = when (f) {
     "cover" -> i.coverData ?: i.coverUrl ?: ""
+    "spine" -> i.spineData ?: ""
     "creators" -> i.creators.joinToString(", ")
     "rating" -> if (i.rating > 0) i.rating.toString() else ""
     "status" -> if (i.status == "none") "" else i.status
@@ -462,7 +465,11 @@ fun mergeWithChoices(group: List<Item>, choices: Map<String, String>): GroupMerg
     val patch = linkedMapOf<String, JsonElement>()
     for ((f, id) in choices) {
         val src = group.firstOrNull { it.id == id }?.toJson() ?: continue
-        val fields = if (f == "cover") listOf("coverData", "coverUrl") else listOf(f)
+        val fields = when (f) {
+            "cover" -> listOf("coverData", "coverUrl")
+            "spine" -> listOf("spineData")
+            else -> listOf(f)
+        }
         for (k in fields) patch[k] = src[k] ?: JsonNull
     }
     return GroupMerge(base.keep.copyWith(patch), base.remove)
