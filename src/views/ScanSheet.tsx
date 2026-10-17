@@ -20,6 +20,14 @@ interface BarcodeDetectorLike {
 declare const BarcodeDetector: { new (o: { formats: string[] }): BarcodeDetectorLike } | undefined
 
 type Mode = 'own' | 'wish' | 'check'
+/** one code of a batch scan */
+interface Queued {
+  code: string
+  state: 'busy' | 'found' | 'none'
+  cand?: Candidate
+  dup?: Item
+  take: boolean
+}
 type Phase = { p: 'scan' } | { p: 'busy'; code: string } | { p: 'found'; code: string; list: Candidate[]; dup?: Item } | { p: 'none'; code: string; dup?: Item }
 
 export function ScanSheet() {
@@ -32,6 +40,16 @@ export function ScanSheet() {
   const [camError, setCamError] = useState('')
   const [added, setAdded] = useState<Item[]>([])
   const [room, setRoom] = useState(settings.lastRoom)
+  /** batch: keep scanning, collect every code, add them all at the end */
+  const [batch, setBatch] = useState(false)
+  const [queue, setQueue] = useState<Queued[]>([])
+  const batchRef = useRef(batch)
+  batchRef.current = batch
+  // the camera loop keeps the first render's functions – read the current mode through a ref
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  const queueRef = useRef(queue)
+  queueRef.current = queue
   const rooms = useRooms()
   const videoRef = useRef<HTMLVideoElement>(null)
   const phaseRef = useRef(phase)
@@ -40,16 +58,32 @@ export function ScanSheet() {
   itemsRef.current = items
   const supported = typeof BarcodeDetector !== 'undefined'
 
+  const lookup = async (code: string, type: string) =>
+    type === 'isbn' ? [await lookupIsbn(code, settings.googleBooksKey)].filter((x): x is Candidate => !!x) : await lookupEan(code)
+
+  /** Batch scan: queue the code (once), look it up in the background. */
+  const enqueue = async (code: string, type: string) => {
+    if (queueRef.current.some((q) => q.code === code)) return
+    navigator.vibrate?.(60)
+    const first = itemsRef.current.find((i) => i.isbn === code)
+    setQueue((q) => [{ code, state: 'busy', dup: first, take: !first }, ...q])
+    const list = await lookup(code, type).catch(() => [])
+    const cand = list[0]
+    const dup = first ?? (cand ? findDuplicate(itemsRef.current, cand) : undefined)
+    setQueue((q) => q.map((x) => (x.code === code ? { ...x, state: cand ? 'found' : 'none', cand, dup, take: !!cand && !dup } : x)))
+  }
+
   const handle = async (raw: string) => {
     const c = classifyCode(raw)
     if (c.type === 'invalid') {
       alert(t('scan.invalid'))
       return
     }
+    if (batchRef.current && modeRef.current !== 'check') return enqueue(c.code, c.type)
     navigator.vibrate?.(60)
     setPhase({ p: 'busy', code: c.code })
     const dup = itemsRef.current.find((i) => i.isbn === c.code)
-    const list = c.type === 'isbn' ? [await lookupIsbn(c.code, settings.googleBooksKey)].filter((x): x is Candidate => !!x) : await lookupEan(c.code)
+    const list = await lookup(c.code, c.type)
     const dup2 = dup ?? (list[0] ? findDuplicate(itemsRef.current, { ...list[0], title: list[0].title }) : undefined)
     setPhase(list.length ? { p: 'found', code: c.code, list, dup: dup2 } : { p: 'none', code: c.code, dup: dup2 })
   }
@@ -107,6 +141,20 @@ export function ScanSheet() {
     setPhase({ p: 'scan' })
   }
 
+  const addQueued = async () => {
+    const take = queue.filter((q) => q.take && q.cand)
+    if (!take.length) return
+    const drafts = take.map((q) => {
+      const { via: _via, ...draft } = q.cand!
+      return { ...draft, owned: mode !== 'wish', room: mode === 'wish' ? undefined : room || undefined, source: 'isbn' as const }
+    })
+    const created = await addItems(drafts)
+    updateSettings({ lastRoom: room })
+    setAdded((a) => [...created, ...a])
+    setQueue((q) => q.filter((x) => !take.includes(x)))
+    alert(t('scan.addedN', { n: created.length }))
+  }
+
   const editAndAdd = (c: Partial<Candidate> & { title: string }) => {
     const { via: _via, ...draft } = c as Candidate
     ui.openForm(undefined, { ...draft, owned: mode !== 'wish', room: room || undefined, source: 'isbn' })
@@ -125,6 +173,13 @@ export function ScanSheet() {
           { value: 'check', label: t('scan.mode.check') },
         ]}
       />
+      {mode !== 'check' && (
+        <label className="toggle">
+          <input type="checkbox" checked={batch} onChange={(e) => (setBatch(e.target.checked), setPhase({ p: 'scan' }))} />
+          {t('scan.batch')}
+        </label>
+      )}
+      {batch && mode !== 'check' && <p className="muted small">{t('scan.batchHint')}</p>}
       {mode === 'own' && (
         <div className="row gap">
           <Suggest id="s-rooms" value={room} options={rooms} placeholder={t('field.room')} label={t('field.room')} onChange={setRoom} />
@@ -203,6 +258,44 @@ export function ScanSheet() {
         <button className="btn ghost wide" onClick={() => setPhase({ p: 'scan' })}>
           {t('scan.next')}
         </button>
+      )}
+
+      {batch && mode !== 'check' && queue.length > 0 && (
+        <>
+          <div className="row between center">
+            <h3>{t('scan.queue', { n: queue.length })}</h3>
+            <button className="btn primary small" disabled={!queue.some((q) => q.take && q.cand)} onClick={addQueued}>
+              ＋ {t('scan.addAll', { n: queue.filter((q) => q.take && q.cand).length })}
+            </button>
+          </div>
+          <div className="review">
+            {queue.map((q) => (
+              <div key={q.code} className={`review-row ${q.take ? '' : 'off'}`}>
+                <input type="checkbox" checked={q.take} disabled={!q.cand} onChange={(e) => setQueue((qs) => qs.map((x) => (x === q ? { ...x, take: e.target.checked } : x)))} aria-label={q.code} />
+                <Cover item={{ title: q.cand?.title ?? q.code, kind: q.cand?.kind ?? 'book', coverUrl: q.cand?.coverUrl }} />
+                <div className="col">
+                  <strong>{q.state === 'busy' ? t('scan.looking', { code: q.code }) : (q.cand?.title ?? q.code)}</strong>
+                  {q.cand?.creators?.length ? <span className="muted small">{q.cand.creators.join(', ')}</span> : null}
+                  <div className="row gap center small">
+                    {q.dup && (
+                      <button className="badge badge-wish" onClick={() => ui.openItem(q.dup!.id)}>
+                        {t('scan.dupShort')}: {q.dup.title}
+                      </button>
+                    )}
+                    {q.state === 'none' && (
+                      <button className="link small" onClick={() => editAndAdd({ title: '', isbn: q.code, kind: q.code.startsWith('97') ? 'book' : 'dvd' })}>
+                        {t('scan.notFoundShort')} – {t('scan.manualAdd')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <button className="icon-btn" onClick={() => setQueue((qs) => qs.filter((x) => x !== q))} aria-label={t('close')}>
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {added.length > 0 && (

@@ -10,6 +10,7 @@ import { useUI } from '../ui'
 
 const LABEL: Record<MergeField, string> = {
   cover: 'merge.cover',
+  spine: 'merge.spine',
   title: 'field.title',
   subtitle: 'field.subtitle',
   creators: 'merge.creators',
@@ -50,6 +51,7 @@ export function MergeSheet({ ids }: { ids: string[] }) {
     const v = mergeValue(i, f)
     if (!v) return <span className="muted">{t('merge.empty')}</span>
     if (f === 'cover') return <Cover item={i} />
+    if (f === 'spine') return <img className="spine-thumb" src={v} alt="" />
     if (f === 'kind') return t(`kind.${v}`)
     if (f === 'format') return t(`format.${v}`)
     if (f === 'status') return t(`status.${i.kind}.${v}`)
@@ -82,7 +84,7 @@ export function MergeSheet({ ids }: { ids: string[] }) {
       {fields.map((f) => (
         <fieldset key={f} className="merge-field">
           <legend>{t(LABEL[f])}</legend>
-          <div className={f === 'cover' ? 'merge-options covers' : 'merge-options'}>
+          <div className={f === 'cover' || f === 'spine' ? 'merge-options covers' : 'merge-options'}>
             {group.map((i) => (
               <label key={i.id} className={chosen(f) === i.id ? 'merge-option on' : 'merge-option'}>
                 <input type="radio" name={`m-${f}`} checked={chosen(f) === i.id} onChange={() => setChoices((c) => ({ ...c, [f]: i.id }))} />

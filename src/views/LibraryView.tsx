@@ -6,6 +6,7 @@ import { useLang } from '../i18n'
 import { allLanguages, applyFilters, EMPTY_FILTERS, openLoan, sortItems, type Filters, type SortKey } from '../logic/items'
 import { useStore } from '../store'
 import { FORMATS, KINDS, STATUSES } from '../types'
+import type { Item } from '../types'
 import { useUI, type ViewMode } from '../ui'
 
 const SCOPES: Filters['scope'][] = ['all', 'wish', 'lent', 'recommend', 'check']
@@ -14,8 +15,16 @@ const VIEWS: [ViewMode, string][] = [
   ['list', '☰'],
   ['compact', '≡'],
   ['grid', '▦'],
+  ['shelf', '📚'],
 ]
 const SCROLL = 'mybib.scroll'
+
+/** Entries per room, rooms in the order they first appear (the list's sort order is kept inside). */
+function groupByRoom(list: Item[]): [string, Item[]][] {
+  const m = new Map<string, Item[]>()
+  for (const i of list) m.set(i.room ?? '', [...(m.get(i.room ?? '') ?? []), i])
+  return [...m.entries()]
+}
 /** render in pages so a 2 000-item library stays smooth */
 const PAGE = 120
 
@@ -241,18 +250,32 @@ export function LibraryView() {
               )}
             </div>
           )}
-          <div className={ui.view === 'grid' ? 'tiles' : 'list'}>
-            {list.slice(0, limit).map((i) => (
-              <ItemRow
-                key={i.id}
-                item={i}
-                view={ui.view}
-                selected={sel ? sel.has(i.id) : undefined}
-                onClick={() => (sel ? toggle(i.id) : ui.openItem(i.id))}
-                onLongPress={() => setSel((s) => new Set([...(s ?? []), i.id]))}
-              />
-            ))}
-          </div>
+          {ui.view === 'shelf' ? (
+            // shelf view: the spines side by side, one shelf per room
+            groupByRoom(list.slice(0, limit)).map(([room, group]) => (
+              <section key={room} className="shelf">
+                <h3 className="shelf-room">{room || t('places.none')}</h3>
+                <div className="shelf-row">
+                  {group.map((i) => (
+                    <ItemRow key={i.id} item={i} view="shelf" selected={sel ? sel.has(i.id) : undefined} onClick={() => (sel ? toggle(i.id) : ui.openItem(i.id))} onLongPress={() => setSel((s) => new Set([...(s ?? []), i.id]))} />
+                  ))}
+                </div>
+              </section>
+            ))
+          ) : (
+            <div className={ui.view === 'grid' ? 'tiles' : 'list'}>
+              {list.slice(0, limit).map((i) => (
+                <ItemRow
+                  key={i.id}
+                  item={i}
+                  view={ui.view}
+                  selected={sel ? sel.has(i.id) : undefined}
+                  onClick={() => (sel ? toggle(i.id) : ui.openItem(i.id))}
+                  onLongPress={() => setSel((s) => new Set([...(s ?? []), i.id]))}
+                />
+              ))}
+            </div>
+          )}
           {list.length > limit && (
             <button className="btn ghost wide" onClick={() => setLimit(limit + PAGE)}>
               {t('lib.showMore', { n: list.length - limit })}

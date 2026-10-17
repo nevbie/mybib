@@ -57,6 +57,7 @@ export function normalizeItem(d: ItemDraft | Record<string, unknown>, now = new 
     description: str(r.description),
     coverUrl: str(r.coverUrl),
     coverData: typeof r.coverData === 'string' && r.coverData.startsWith('data:image/') ? r.coverData : undefined,
+    spineData: typeof r.spineData === 'string' && r.spineData.startsWith('data:image/') ? r.spineData : undefined,
     tags: strList(r.tags),
     category: toCategory(str(r.category)),
     format: oneOf<Format>(FORMATS, r.format, 'physical'),
@@ -435,7 +436,7 @@ const STATUS_RANK = { none: 0, want: 1, active: 2, done: 3 } as const
 
 /** How much is filled in – the most complete entry of a group is kept when merging. */
 function completeness(i: Item): number {
-  const vals = [i.subtitle, i.publisher, i.year, i.isbn, i.language, i.series, i.volume, i.pages, i.description, i.coverUrl, i.coverData, i.category, i.room, i.notes]
+  const vals = [i.subtitle, i.publisher, i.year, i.isbn, i.language, i.series, i.volume, i.pages, i.description, i.coverUrl, i.coverData, i.spineData, i.category, i.room, i.notes]
   return vals.filter((v) => v !== undefined && v !== '').length + i.creators.length + i.tags.length + i.loans.length + (i.rating ? 1 : 0)
 }
 
@@ -450,6 +451,7 @@ export function mergeGroup(group: Item[]): { keep: Item; remove: string[] } {
   for (const other of sorted.slice(1)) keep = fillEmpty(keep, other) ?? keep
   const all = sorted
   keep.coverData ??= all.find((i) => i.coverData)?.coverData
+  keep.spineData ??= all.find((i) => i.spineData)?.spineData
   if (!keep.creators.length) keep.creators = all.find((i) => i.creators.length)?.creators ?? []
   keep.rating = Math.max(...all.map((i) => i.rating))
   keep.status = all.map((i) => i.status).reduce((a, b) => (STATUS_RANK[b] > STATUS_RANK[a] ? b : a))
@@ -495,16 +497,18 @@ export function completionPatch(old: Item, d: ItemDraft): Partial<Item> {
   }
   if (!old.creators.length && d.creators?.length) patch.creators = d.creators
   if (!old.coverData && d.coverData) patch.coverData = d.coverData
+  if (!old.spineData && d.spineData) patch.spineData = d.spineData
   return patch
 }
 
 /** Fields offered for choice when merging by hand (cover = own photo and online cover together). */
-export const MERGE_FIELDS = ['cover', 'title', 'subtitle', 'creators', 'series', 'volume', 'publisher', 'year', 'isbn', 'language', 'pages', 'kind', 'format', 'category', 'room', 'description', 'status', 'rating'] as const
+export const MERGE_FIELDS = ['cover', 'spine', 'title', 'subtitle', 'creators', 'series', 'volume', 'publisher', 'year', 'isbn', 'language', 'pages', 'kind', 'format', 'category', 'room', 'description', 'status', 'rating'] as const
 export type MergeField = (typeof MERGE_FIELDS)[number]
 
 /** Value of a merge field, for comparing and showing; '' when empty. */
 export function mergeValue(i: Item, f: MergeField): string {
   if (f === 'cover') return i.coverData ?? i.coverUrl ?? ''
+  if (f === 'spine') return i.spineData ?? ''
   if (f === 'creators') return i.creators.join(', ')
   if (f === 'rating') return i.rating ? String(i.rating) : ''
   if (f === 'status') return i.status === 'none' ? '' : i.status
@@ -533,6 +537,8 @@ export function mergeWithChoices(group: Item[], choices: Partial<Record<MergeFie
     if (f === 'cover') {
       keep.coverData = src.coverData
       keep.coverUrl = src.coverUrl
+    } else if (f === 'spine') {
+      keep.spineData = src.spineData
     } else (keep as unknown as Record<string, unknown>)[f] = (src as unknown as Record<string, unknown>)[f]
   }
   return { keep, remove: base.remove }

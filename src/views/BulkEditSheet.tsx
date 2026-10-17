@@ -38,6 +38,7 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
   const n = live.length
   const withOwn = live.filter((id) => byId.get(id)!.coverData).length
   const withOnline = live.filter((id) => byId.get(id)!.coverUrl).length
+  const withSpine = live.filter((id) => byId.get(id)!.spineData).length
   const allTags = [...new Set(live.flatMap((id) => byId.get(id)!.tags))].sort()
   const kindForLabels = (() => {
     const kinds = new Set(live.map((id) => byId.get(id)!.kind))
@@ -60,7 +61,8 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
     if (checked) patch.needsCheck = undefined
     if (cover === 'own' || cover === 'all') patch.coverData = undefined
     if (cover === 'online' || cover === 'all') patch.coverUrl = undefined
-    if (cover && !confirm(t('bulkEdit.coverConfirm', { n: cover === 'own' ? withOwn : cover === 'online' ? withOnline : n }))) return
+    if (cover === 'spine') patch.spineData = undefined
+    if (cover && !confirm(t('bulkEdit.coverConfirm', { n: cover === 'own' ? withOwn : cover === 'online' ? withOnline : cover === 'spine' ? withSpine : n }))) return
     const tag = addTag.trim()
     updateItems(live, (i) => ({
       ...patch,
@@ -216,6 +218,9 @@ export function BulkEditSheet({ ids }: { ids: string[] }) {
           </option>
           <option value="all" disabled={!withOwn && !withOnline}>
             {t('bulkEdit.coverAll')}
+          </option>
+          <option value="spine" disabled={!withSpine}>
+            {t('bulkEdit.coverSpine', { n: withSpine })}
           </option>
         </select>
       </label>

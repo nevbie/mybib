@@ -46,6 +46,8 @@ export interface Item {
   coverUrl?: string
   /** own photo, downscaled JPEG data URL – wins over coverUrl */
   coverData?: string
+  /** own photo of the spine (downscaled JPEG data URL) – for the shelf view */
+  spineData?: string
   tags: string[]
   /** one main category: a default id (see logic/categories) or an own name */
   category?: string
