@@ -38,6 +38,8 @@ export function ItemDetail({ id }: { id: string }) {
   const [coverMenu, setCoverMenu] = useState(false)
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
+  const spineCamRef = useRef<HTMLInputElement>(null)
+  const spineGalRef = useRef<HTMLInputElement>(null)
   if (!item) return null
   const loan = openLoan(item)
   const onCoverPhoto = async (f?: File) => {
@@ -46,6 +48,10 @@ export function ItemDetail({ id }: { id: string }) {
     setCoverMenu(false)
   }
   const up = (patch: Partial<Item>) => updateItem(item.id, patch)
+  const onSpinePhoto = async (f?: File) => {
+    if (!f) return
+    up({ spineData: await coverFromPhoto(f) })
+  }
   const fmtDate = (d: string) => new Date(d + 'T12:00').toLocaleDateString(lang)
 
   const share = async () => {
@@ -151,6 +157,22 @@ export function ItemDetail({ id }: { id: string }) {
               {item.coverUrl ? t('cover.useOnline') : t('form.coverRemove')}
             </button>
           )}
+          <div className="spine-menu">
+            {item.spineData && <img className="spine-thumb" src={item.spineData} alt={t('spine.title')} />}
+            <button className="btn small" onClick={() => spineCamRef.current?.click()}>
+              📚 {t('spine.camera')}
+            </button>
+            <button className="btn small" onClick={() => spineGalRef.current?.click()}>
+              🖼 {t('spine.gallery')}
+            </button>
+            {item.spineData && (
+              <button className="btn small ghost" onClick={() => up({ spineData: undefined })}>
+                {t('spine.remove')}
+              </button>
+            )}
+          </div>
+          <input ref={spineCamRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (onSpinePhoto(e.target.files?.[0]), (e.target.value = ''))} />
+          <input ref={spineGalRef} type="file" accept="image/*" hidden onChange={(e) => (onSpinePhoto(e.target.files?.[0]), (e.target.value = ''))} />
           <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (onCoverPhoto(e.target.files?.[0]), (e.target.value = ''))} />
           <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => (onCoverPhoto(e.target.files?.[0]), (e.target.value = ''))} />
         </div>

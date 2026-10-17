@@ -14,6 +14,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -93,6 +95,19 @@ class ScanState {
     var room by mutableStateOf<String?>(null)
     var manual by mutableStateOf("")
     var last = ""
+
+    /** batch mode: codes are collected and looked up in the background, then added together */
+    var batch by mutableStateOf(false)
+    val queue = mutableStateListOf<Queued>()
+}
+
+/** One scanned code in batch mode. */
+class Queued(val code: String, val type: String) {
+    /** busy / found / none */
+    var state by mutableStateOf("busy")
+    var cand by mutableStateOf<Candidate?>(null)
+    var dup by mutableStateOf<Item?>(null)
+    var take by mutableStateOf(true)
 }
 
 /** Barcode scanning: add to shelf, add to wishlist, or just check "do I own this?". */
@@ -112,6 +127,22 @@ fun ScanScreen(screen: Screen.Scan) {
             return
         }
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        if (st.batch && st.mode != "check") {
+            // collect it; the same code twice in one batch is only queued once
+            if (st.queue.any { it.code == c.code }) return
+            val q = Queued(c.code, c.type)
+            st.queue.add(0, q)
+            vm.viewModelScope.launch {
+                val items = vm.store.items.value
+                val list = if (c.type == "isbn") listOfNotNull(vm.lookup.lookupIsbn(c.code, vm.store.settings.value.googleBooksKey)) else vm.lookup.lookupEan(c.code)
+                val first = list.firstOrNull()
+                q.cand = first
+                q.dup = items.firstOrNull { it.isbn == c.code } ?: first?.let { findDuplicate(items, title = it.title, creators = it.creators) }
+                q.take = first != null && q.dup == null
+                q.state = if (first != null) "found" else "none"
+            }
+            return
+        }
         st.phase = "busy"
         st.code = c.code
         // runs in the view model so it finishes even when an entry is opened meanwhile
@@ -133,6 +164,18 @@ fun ScanScreen(screen: Screen.Scan) {
         st.phase = "scan"
     }
 
+    fun addQueued() {
+        val r = room
+        val take = st.queue.filter { it.take && it.cand != null }
+        if (take.isEmpty()) return
+        val extra = draftOf("owned" to (st.mode != "wish"), "room" to (if (st.mode == "wish" || r.isEmpty()) null else r), "source" to "isbn")
+        val added = vm.store.addItems(take.map { it.cand!!.data + extra })
+        vm.store.updateSettings { it.copy(lastRoom = r) }
+        st.added.addAll(0, added)
+        st.queue.removeAll(take)
+        toast(ctx, ui.t("scan.addedN", "n" to added.size))
+    }
+
     fun edit(data: Draft) {
         vm.push(Screen.Form(draft = data + draftOf("owned" to (st.mode != "wish"), "room" to room.ifEmpty { null }, "source" to "isbn")))
         st.phase = "scan"
@@ -143,6 +186,13 @@ fun ScanScreen(screen: Screen.Scan) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Segmented(listOf("own", "wish", "check").map { it to ui.t("scan.mode.$it") }, st.mode, { st.mode = it })
             if (st.mode == "own") SuggestField(room, ui.rooms, ui.t("field.room"), { st.room = it.trim() })
+            if (st.mode != "check") {
+                Row(Modifier.fillMaxWidth().clickable { st.batch = !st.batch }, verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(st.batch, { st.batch = it })
+                    Text(ui.t("scan.batch"))
+                }
+                if (st.batch) Small(ui.t("scan.batchHint"))
+            }
             BarcodeCamera(
                 onCode = { v ->
                     // need the same reading twice in a row to avoid misreads
@@ -168,6 +218,41 @@ fun ScanScreen(screen: Screen.Scan) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = { handle(st.manual) }) { Text(ui.t("ok")) }
+            }
+            if (st.batch && st.mode != "check" && st.queue.isNotEmpty()) {
+                val n = st.queue.count { it.take && it.cand != null }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(ui.t("scan.queue", "n" to st.queue.size), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Button(onClick = { addQueued() }, enabled = n > 0) { Text("＋ " + ui.t("scan.addAll", "n" to n)) }
+                }
+                for (q in st.queue) {
+                    val c = q.cand
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(q.take, { q.take = it }, enabled = c != null)
+                            if (c != null) CoverImage(c.title, c.kind, c.coverUrl)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                when (q.state) {
+                                    "busy" -> Text(ui.t("scan.looking", "code" to q.code))
+                                    "none" -> {
+                                        Text("${q.code} – ${ui.t("scan.notFoundShort")}")
+                                        TextButton(onClick = {
+                                            st.queue.remove(q)
+                                            edit(draftOf("title" to "", "isbn" to q.code, "kind" to (if (q.code.startsWith("97")) "book" else "dvd")))
+                                        }) { Text(ui.t("scan.manualAdd")) }
+                                    }
+                                    else -> {
+                                        Text(c?.title ?: q.code, fontWeight = FontWeight.SemiBold)
+                                        if (c != null && c.creators.isNotEmpty()) Small(c.creators.joinToString(", "))
+                                    }
+                                }
+                                q.dup?.let { d -> Small("⚠︎ ${ui.t("scan.dupShort")}: ${d.title}") }
+                            }
+                            TextButton(onClick = { st.queue.remove(q) }) { Text("✕") }
+                        }
+                    }
+                }
             }
             if (st.phase == "busy") Text(ui.t("scan.looking", "code" to st.code), Modifier.padding(12.dp))
             val dup = st.dup

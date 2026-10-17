@@ -1,6 +1,8 @@
 package app.mybib.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,7 +38,7 @@ import app.mybib.core.mergeValue
 import app.mybib.core.mergeWithChoices
 
 private val fieldLabel = mapOf(
-    "cover" to "merge.cover", "title" to "field.title", "subtitle" to "field.subtitle", "creators" to "merge.creators",
+    "cover" to "merge.cover", "spine" to "merge.spine", "title" to "field.title", "subtitle" to "field.subtitle", "creators" to "merge.creators",
     "series" to "field.seriesOnly", "volume" to "field.volume", "publisher" to "field.publisher", "year" to "field.year",
     "isbn" to "field.isbn", "language" to "field.language", "pages" to "field.pages", "kind" to "field.kind",
     "format" to "field.format", "category" to "field.category", "room" to "field.room", "description" to "merge.description",
@@ -76,6 +78,7 @@ fun MergeScreen(screen: Screen.Merge) {
         when {
             v.isEmpty() -> Text(ui.t("merge.empty"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             f == "cover" -> CoverImage(i)
+            f == "spine" -> coverBitmap(v)?.let { Image(it, contentDescription = null, modifier = Modifier.height(96.dp)) } ?: Text(ui.t("merge.spine"))
             f == "kind" -> Text(ui.t("kind.$v"))
             f == "format" -> Text(ui.t("format.$v"))
             f == "status" -> Text(ui.t("status.${i.kind}.$v"))

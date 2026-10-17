@@ -4,7 +4,7 @@ import { EMPTY_FILTERS, type Filters, type SortKey } from './logic/items'
 import type { ItemDraft, Kind } from './types'
 
 export type TabId = 'library' | 'add' | 'places' | 'settings'
-export type ViewMode = 'list' | 'compact' | 'grid'
+export type ViewMode = 'list' | 'compact' | 'grid' | 'shelf'
 
 /** What the library looked like last time (filters, sort, view) – kept on this device. */
 const SAVED = 'mybib.ui'

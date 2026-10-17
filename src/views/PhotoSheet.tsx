@@ -5,7 +5,7 @@ import { useRooms } from '../components/usePlaces'
 import { useLang } from '../i18n'
 import { RecognizeError, toDraft } from '../logic/recognized'
 import { coverFromPhoto, cropCover, dataUrlBase64, photoForAI, rotateDataUrl } from '../logic/image'
-import { completionPatch, findDuplicate, findMatch, newId } from '../logic/items'
+import { completionPatch, findMatch, newId } from '../logic/items'
 import { enrichPatch, matchScore, searchOnline } from '../logic/lookup'
 import { useStore } from '../store'
 import { KINDS, type ItemDraft, type Kind } from '../types'
@@ -83,13 +83,21 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
       for (let i = 0; i < list.length; i++) {
         setStatus(t('ai.reading', { i: i + 1, n: list.length }))
         try {
-          const found = await recognize(list[i])
+          const big = await photoForAI(list[i])
+          const found = await recognize(list[i], big)
+          // every spine is cut out as its own photo (shelf view); books already there are completed instead
+          const rows: Row[] = []
+          for (const f of found) {
+            const spine = f.box ? await cropCover(big, f.box) : null
+            const draft = { ...(toDraft(f) as Row['draft']), ...(spine ? { spineData: spine } : {}) }
+            const match = findMatch(items, draft)
+            rows.push({ key: newId(), draft, confidence: f.confidence, remark: f.remark, selected: true, target: match && { id: match.id, title: match.title }, update: !!match })
+          }
           setRows((r) => [
             ...r,
-            ...found.map((f): Row => {
-              const draft = toDraft(f) as Row['draft']
-              const dup = findDuplicate(items, draft) ?? r.map((x) => x.draft).find((x) => x.title === draft.title && x.volume === draft.volume)
-              return { key: newId(), draft, confidence: f.confidence, remark: f.remark, selected: !dup, dupTitle: dup?.title }
+            ...rows.map((row) => {
+              const twice = r.find((x) => x.draft.title === row.draft.title && x.draft.volume === row.draft.volume)
+              return twice ? { ...row, selected: false, dupTitle: twice.draft.title } : row
             }),
           ])
         } catch (e) {
@@ -218,6 +226,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
       {mode === 'cover' && <p className="muted small">{hasKey ? t('ai.coverHint') : t('ai.coverNoKey')}</p>}
       {mode === 'cover' && <p className="muted small">{t('ai.coversMany')}</p>}
       {mode === 'shelf' && hasKey && <p className="muted small">{t('ai.shelfHint')}</p>}
+      {mode === 'shelf' && hasKey && <p className="muted small">{t('spine.shelfHint')}</p>}
 
       <div className="row gap">
         <Suggest id="p-rooms" value={room} options={rooms} placeholder={t('field.room')} label={t('field.room')} onChange={setRoom} />
@@ -257,7 +266,7 @@ export function PhotoSheet({ mode }: { mode: 'shelf' | 'cover' }) {
             {rows.map((r) => (
               <div key={r.key} className={`review-row ${r.selected ? '' : 'off'}`}>
                 <input type="checkbox" checked={r.selected} onChange={(e) => upd(r.key, { selected: e.target.checked })} aria-label={t('ai.take')} />
-                {r.draft.coverData && <img className="review-cover" src={r.draft.coverData} alt="" />}
+                {r.draft.coverData ? <img className="review-cover" src={r.draft.coverData} alt="" /> : r.draft.spineData && <img className="review-spine" src={r.draft.spineData} alt="" />}
                 <div className="col">
                   <input className="review-title" value={r.draft.title} placeholder={`${t('field.title')} *`} onChange={(e) => upd(r.key, (x) => ({ draft: { ...x.draft, title: e.target.value } }))} aria-label={t('field.title')} />
                   <input className="review-sub" value={r.draft.creators.join(', ')} placeholder={t(`creator.${r.draft.kind}`)} onChange={(e) => upd(r.key, (x) => ({ draft: { ...x.draft, creators: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) } }))} aria-label={t(`creator.${r.draft.kind}`)} />

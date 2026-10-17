@@ -4,6 +4,7 @@ package app.mybib.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -134,6 +135,12 @@ fun ItemScreen(screen: Screen.Detail) {
         val p = d.split("-")
         return if (p.size == 3 && ui.lang == "de") "${p[2].toIntOrNull() ?: p[2]}.${p[1].toIntOrNull() ?: p[1]}.${p[0]}" else d
     }
+    val spinePicker = rememberPhotoPicker(pendingKey = { "spine:${screen.id}" }) { uris ->
+        vm.viewModelScope.launch {
+            val data = withContext(Dispatchers.IO) { coverDataUrl(ctx.applicationContext, uris.first()) }
+            if (data != null) vm.store.updateItem(screen.id, "spineData" to data)
+        }
+    }
     // the view model scope, so saving goes on even if this screen is left meanwhile
     val picker = rememberPhotoPicker(pendingKey = { "cover:${screen.id}" }) { uris ->
         coverMenu = false
@@ -199,6 +206,12 @@ fun ItemScreen(screen: Screen.Detail) {
                 FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = picker.camera) { IconText(Icons.Filled.PhotoCamera, ui.t("cover.camera")) }
                     OutlinedButton(onClick = picker.gallery) { IconText(Icons.Filled.PhotoLibrary, ui.t("cover.gallery")) }
+                    item.spineData?.let { data ->
+                        coverBitmap(data)?.let { Image(it, contentDescription = ui.t("spine.title"), modifier = Modifier.height(96.dp)) }
+                    }
+                    OutlinedButton(onClick = spinePicker.camera) { Text("📚 ${ui.t("spine.camera")}") }
+                    OutlinedButton(onClick = spinePicker.gallery) { Text("🖼 ${ui.t("spine.gallery")}") }
+                    if (item.spineData != null) TextButton(onClick = { up("spineData" to null) }) { Text(ui.t("spine.remove")) }
                     item.coverData?.let { data ->
                         OutlinedButton(onClick = {
                             scope.launch { up("coverData" to withContext(Dispatchers.Default) { rotateDataUrl(data, 90) }) }

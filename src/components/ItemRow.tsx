@@ -49,6 +49,23 @@ export function ItemRow({ item, onClick, onLongPress, selected, view = 'list' }:
   const check = selected !== undefined && <input type="checkbox" checked={selected} readOnly tabIndex={-1} aria-hidden className="item-check" />
   const cls = (base: string) => (selected ? `${base} selected` : base)
 
+  if (view === 'shelf') {
+    // a spine on the shelf: the own spine photo, else a coloured strip with the title written upwards
+    let h = 0
+    for (const c of item.title) h = (h * 31 + c.charCodeAt(0)) % 360
+    return (
+      <button className={cls('spine')} onClick={onClick} aria-pressed={selected} aria-label={item.title} title={item.title} {...press}>
+        {item.spineData ? (
+          <img src={item.spineData} alt="" loading="lazy" />
+        ) : (
+          <span className="spine-ph" style={{ background: `hsl(${h} 40% 45%)` }}>
+            {item.title}
+          </span>
+        )}
+      </button>
+    )
+  }
+
   if (view === 'grid') {
     return (
       <button className={cls('item-tile')} onClick={onClick} aria-pressed={selected} {...press}>
